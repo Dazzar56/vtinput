@@ -225,6 +225,10 @@ func ParseMouseSGR(data []byte) (*InputEvent, int, error) {
 	px := atoi(params[1]) // X
 	py := atoi(params[2]) // Y
 
+	// SGR protocol is 1-based, we use 0-based coordinates.
+	if px > 0 { px-- }
+	if py > 0 { py-- }
+
 	event := &InputEvent{
 		Type:    MouseEventType,
 		MouseX:  uint16(px),
