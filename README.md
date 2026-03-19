@@ -52,7 +52,7 @@ func main() {
 	reader := vtinput.NewReader(os.Stdin)
 
 	fmt.Print("\033[2J\033[H") // Clear screen
-	fmt.Println("Listening for events. Press Ctrl+C to exit.")
+	fmt.Println("Listening for events. Press Ctrl+C to exit.\r\n")
 
 	for {
 		// 3. Block and wait for the next parsed event
