@@ -27,13 +27,13 @@ var (
 )
 
 const (
-	_f1   = 0xFF00 + 11
-	_f5   = 0xFF00 + 35
-	_f9   = 0xFF00 + 59
-	_nav  = 0xFF00 + 86
-	_up   = 0xFF00 + 95
-	_num  = 0xFF00 + 113
-	_nDot = 0xFF00 + 127
+	_f1   = 0xFF00 + 7
+	_f5   = 0xFF00 + 28
+	_f9   = 0xFF00 + 49
+	_nav  = 0xFF00 + 73
+	_up   = 0xFF00 + 81
+	_num  = 0xFF00 + 98
+	_nDot = 0xFF00 + 112
 )
 
 // Keyboard layout rows for visualization (0xFF00+x pads to absolute column x)
