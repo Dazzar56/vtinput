@@ -325,7 +325,13 @@ func ParseKitty(data []byte) (*InputEvent, int, error) {
 	}
 
 	if params[0][0] > 0 {
-		event.UnshiftedChar = rune(params[0][0])
+		unc := params[0][0]
+		if unc < 32 || unc == 127 || (unc >= 57358 && unc <= 57454) {
+			unc = 0
+		}
+		if unc > 0 && utf8.ValidRune(rune(unc)) {
+			event.UnshiftedChar = rune(unc)
+		}
 	}
 
 	if modifState > 0 {
