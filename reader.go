@@ -13,44 +13,31 @@ type Reader struct {
 	buf      []byte
 	dataChan chan byte
 	errChan  chan error
+	done     chan struct{}
+	stopPipe [2]int // Used on Unix for Select unblocking
 }
 
-// NewReader creates a new Reader instance and starts a background pumper.
-func NewReader(in io.Reader) *Reader {
-	r := &Reader{
-		in:       in,
-		buf:      make([]byte, 0, 128),
-		dataChan: make(chan byte, 1024),
-		errChan:  make(chan error, 1),
+// Close stops the background reading goroutine instantly.
+func (r *Reader) Close() {
+	select {
+	case <-r.done:
+		return
+	default:
+		close(r.done)
+		r.platformClose()
 	}
-
-	// Background goroutine: read from io.Reader and send to dataChan
-	go func() {
-		tmp := make([]byte, 256)
-		for {
-			n, err := r.in.Read(tmp)
-			if n > 0 {
-				for i := 0; i < n; i++ {
-					r.dataChan <- tmp[i]
-				}
-			}
-			if err != nil {
-				r.errChan <- err
-				return
-			}
-		}
-	}()
-
-	return r
 }
 
 // ReadEvent reads the next input event.
 func (r *Reader) ReadEvent() (*InputEvent, error) {
 	for {
+		select {
+		case <-r.done:
+			return nil, io.EOF
+		default:
+		}
 		if len(r.buf) > 0 {
 			// Optimization: Only attempt to parse sequences if the buffer starts with ESC.
-			// This prevents normal characters (1, 2, a, b...) from triggering "Incomplete"
-			// errors in parsers, which caused the "off-by-one" lag.
 			if r.buf[0] == 0x1B {
 				// 1. Handle SS3 sequences (ESC O ...)
 				if event, consumed, err := ParseLegacySS3(r.buf); err == nil {
@@ -92,20 +79,19 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 						r.buf = r.buf[consumed:]
 						return event, nil
 					}
-					// If parser failed, we'll treat it as possible Alt or just Esc below
 				} else if err == ErrIncomplete {
 					goto waitForMore
 				}
 
-				// 3. Handle Double ESC (User typed ESC twice quickly or used it as a meta-key)
+				// 3. Handle Double ESC
 				if len(r.buf) >= 2 && r.buf[1] == 0x1B {
-					r.buf = r.buf[2:] // Consume BOTH ESC bytes
+					r.buf = r.buf[2:]
 					return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_ESCAPE, KeyDown: true}, nil
 				}
 
 				// 4. Handle Legacy Alt (ESC + Char)
 				if len(r.buf) >= 2 && utf8.FullRune(r.buf[1:]) {
-					r.buf = r.buf[1:] // Consume ESC
+					r.buf = r.buf[1:]
 					character, size := utf8.DecodeRune(r.buf)
 					r.buf = r.buf[size:]
 					return &InputEvent{
@@ -118,7 +104,6 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 				}
 
 			waitForMore:
-				// If we have just [0x1B], wait for more data with a 100ms timeout.
 				select {
 				case b := <-r.dataChan:
 					r.buf = append(r.buf, b)
@@ -127,24 +112,11 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 					r.buf = r.buf[1:]
 					return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_ESCAPE, KeyDown: true}, nil
 				case err := <-r.errChan:
-					// Drain all pending data before handling error
-					hasMore := true
-					for hasMore {
-						select {
-						case b := <-r.dataChan:
-							r.buf = append(r.buf, b)
-						default:
-							hasMore = false
-						}
-					}
-					if len(r.buf) == 0 {
-						return nil, err
-					}
+					if len(r.buf) == 0 { return nil, err }
 					continue
 				}
 			}
 
-			// 6. Single byte / UTF-8 / Ctrl-keys / Backspace (0x7F)
 			if r.buf[0] == 0x7F {
 				r.buf = r.buf[1:]
 				return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_BACK, KeyDown: true, IsLegacy: true}, nil
@@ -153,24 +125,6 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 			if utf8.FullRune(r.buf) {
 				character, size := utf8.DecodeRune(r.buf)
 				consumed := size
-
-				// WORKAROUND for far2l TTY bug that sends '= ' for '=' keydown in legacy mode.
-				if character == '=' {
-					if len(r.buf) > size && r.buf[size] == ' ' {
-						consumed++
-					} else if len(r.buf) == size {
-						select {
-						case b := <-r.dataChan:
-							if b != ' ' {
-								r.buf = append(r.buf, b)
-							}
-						case <-time.After(2 * time.Millisecond):
-						case err := <-r.errChan:
-							r.errChan <- err
-						}
-					}
-				}
-
 				r.buf = r.buf[consumed:]
 				if event := translateLegacyByte(character); event != nil {
 					return event, nil
@@ -179,30 +133,15 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 			}
 		}
 
-		// wait for at least one byte to arrive
 		select {
 		case b := <-r.dataChan:
 			r.buf = append(r.buf, b)
 		case err := <-r.errChan:
-			// Drain all pending data
-			hasMore := true
-			for hasMore {
-				select {
-				case b := <-r.dataChan:
-					r.buf = append(r.buf, b)
-				default:
-					hasMore = false
-				}
-			}
-			if len(r.buf) == 0 {
-				return nil, err
-			}
-			// If buf has data, the next loop iteration will process it
+			if len(r.buf) == 0 { return nil, err }
 		}
 	}
 }
-// translateLegacyByte converts C0 control characters (0x01-0x1A)
-// to InputEvents with VirtualKeyCodes and Ctrl modifier.
+
 func translateLegacyByte(r rune) *InputEvent {
 	evt := &InputEvent{Type: KeyEventType, KeyDown: true, IsLegacy: true}
 	switch r {
@@ -242,8 +181,6 @@ func translateLegacyByte(r rune) *InputEvent {
 		evt.ControlKeyState = LeftCtrlPressed
 		return evt
 	}
-
-	// Ctrl+A is 1, Ctrl+Z is 26
 	if r >= 1 && r <= 26 {
 		evt.VirtualKeyCode = uint16(VK_A + (r - 1))
 		evt.ControlKeyState = LeftCtrlPressed
