@@ -18,13 +18,9 @@ const (
 	seqEnableMouse  = "\x1b[?1003h\x1b[?1006h"
 	seqDisableMouse = "\x1b[?1006l\x1b[?1003l"
 
-	// 1004: Focus tracking, 2004: Bracketed paste, 1049: Alt Screen Buffer
-	seqEnableExt  = "\x1b[?1004h\x1b[?2004h\x1b[?1049h"
-	seqDisableExt = "\x1b[?1049l\x1b[?2004l\x1b[?1004l"
-
-	seqUnderscoreCursor = "\x1b[3 q" // 3 = Blinking underline
-	seqDefaultCursor    = "\x1b[0 q"
-	seqResetPalette     = "\x1b]104\x07"
+	// 1004: Focus tracking, 2004: Bracketed paste
+	seqEnableExt  = "\x1b[?1004h\x1b[?2004h"
+	seqDisableExt = "\x1b[?2004l\x1b[?1004l"
 )
 // Protocol flags to selectively enable features.
 type Protocol uint32
@@ -74,10 +70,6 @@ func EnableProtocols(p Protocol) (func(), error) {
 		enableSeq += seqEnableExt
 		disableSeq = seqDisableExt + disableSeq
 	}
-
-	// Always set cursor shape and ensure palette/attribute reset on exit
-	enableSeq += seqUnderscoreCursor
-	disableSeq = seqResetPalette + seqDefaultCursor + "\x1b[0m" + disableSeq
 
 	// 4. Send activation sequences
 	if _, err := os.Stdout.WriteString(enableSeq); err != nil {
