@@ -328,18 +328,16 @@ func TestReadEvent_Focus(t *testing.T) {
 
 	// Check Focus In
 	e, err := r.ReadEvent()
-	if err != nil {
-		t.Fatalf("ReadEvent failed: %v", err)
-	}
+	if err != nil { t.Fatalf("ReadEvent 1 failed: %v", err) }
+	if e == nil { t.Fatal("ReadEvent 1 returned nil event") }
 	if e.Type != FocusEventType || !e.SetFocus {
 		t.Errorf("Expected Focus IN, got %+v", e)
 	}
 
 	// Check Focus Out
 	e, err = r.ReadEvent()
-	if err != nil {
-		t.Fatalf("ReadEvent failed: %v", err)
-	}
+	if err != nil { t.Fatalf("ReadEvent 2 failed: %v", err) }
+	if e == nil { t.Fatal("ReadEvent 2 returned nil event") }
 	if e.Type != FocusEventType || e.SetFocus {
 		t.Errorf("Expected Focus OUT, got %+v", e)
 	}
@@ -352,18 +350,16 @@ func TestReadEvent_Paste(t *testing.T) {
 
 	// Check Paste Start
 	e, err := r.ReadEvent()
-	if err != nil {
-		t.Fatalf("ReadEvent failed: %v", err)
-	}
+	if err != nil { t.Fatalf("ReadEvent 1 failed: %v", err) }
+	if e == nil { t.Fatal("ReadEvent 1 returned nil event") }
 	if e.Type != PasteEventType || !e.PasteStart {
 		t.Errorf("Expected Paste START, got %+v", e)
 	}
 
 	// Check Paste End
 	e, err = r.ReadEvent()
-	if err != nil {
-		t.Fatalf("ReadEvent failed: %v", err)
-	}
+	if err != nil { t.Fatalf("ReadEvent 2 failed: %v", err) }
+	if e == nil { t.Fatal("ReadEvent 2 returned nil event") }
 	if e.Type != PasteEventType || e.PasteStart {
 		t.Errorf("Expected Paste END, got %+v", e)
 	}
@@ -409,49 +405,57 @@ func TestReadEvent_Mixed(t *testing.T) {
 	r := NewReader(bytes.NewReader(input))
 
 	// Check Ctrl+C
-	e, _ := r.ReadEvent()
+	e, err := r.ReadEvent()
+	if err != nil || e == nil { t.Fatalf("Ctrl+C read failed: %v", err) }
 	if e.VirtualKeyCode != VK_C || (e.ControlKeyState&LeftCtrlPressed) == 0 {
 		t.Errorf("Expected Ctrl+C, got %+v", e)
 	}
 
 	// Check Shift+Tab
-	e, _ = r.ReadEvent()
+	e, err = r.ReadEvent()
+	if err != nil || e == nil { t.Fatalf("Shift+Tab read failed: %v", err) }
 	if e.VirtualKeyCode != VK_TAB || (e.ControlKeyState&ShiftPressed) == 0 {
 		t.Errorf("Expected Shift+Tab, got %+v", e)
 	}
 
 	// Check Double ESC
-	e, _ = r.ReadEvent()
+	e, err = r.ReadEvent()
+	if err != nil || e == nil { t.Fatalf("Double ESC read failed: %v", err) }
 	if e.VirtualKeyCode != VK_ESCAPE {
 		t.Errorf("Expected VK_ESCAPE from double ESC, got %+v", e)
 	}
 
 	// Check Ctrl+Space
-	e, _ = r.ReadEvent()
+	e, err = r.ReadEvent()
+	if err != nil || e == nil { t.Fatalf("Ctrl+Space read failed: %v", err) }
 	if e.VirtualKeyCode != VK_SPACE || (e.ControlKeyState&LeftCtrlPressed) == 0 {
 		t.Errorf("Expected Ctrl+Space, got %+v", e)
 	}
 
 	// Check Ctrl+\
-	e, _ = r.ReadEvent()
+	e, err = r.ReadEvent()
+	if err != nil || e == nil { t.Fatalf("Ctrl+\\ read failed: %v", err) }
 	if e.VirtualKeyCode != VK_OEM_5 || (e.ControlKeyState&LeftCtrlPressed) == 0 {
 		t.Errorf("Expected Ctrl+\\, got %+v", e)
 	}
 
 	// Check Ctrl+H (Backspace)
-	e, _ = r.ReadEvent()
+	e, err = r.ReadEvent()
+	if err != nil || e == nil { t.Fatalf("Ctrl+H read failed: %v", err) }
 	if e.VirtualKeyCode != VK_BACK {
 		t.Errorf("Expected VK_BACK from 0x08, got %+v", e)
 	}
 
 	// Check Ctrl+^
-	e, _ = r.ReadEvent()
+	e, err = r.ReadEvent()
+	if err != nil || e == nil { t.Fatalf("Ctrl+^ read failed: %v", err) }
 	if e.VirtualKeyCode != VK_6 {
 		t.Errorf("Expected VK_6 from 0x1E, got %+v", e)
 	}
 
 	// Check Ctrl+_
-	e, _ = r.ReadEvent()
+	e, err = r.ReadEvent()
+	if err != nil || e == nil { t.Fatalf("Ctrl+_ read failed: %v", err) }
 	if e.VirtualKeyCode != VK_OEM_MINUS {
 		t.Errorf("Expected VK_OEM_MINUS from 0x1F, got %+v", e)
 	}

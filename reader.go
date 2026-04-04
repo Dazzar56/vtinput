@@ -36,6 +36,20 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 			return nil, io.EOF
 		default:
 		}
+
+		// Greedy drain: pull all currently available bytes from the channel
+		// into the buffer before attempting to parse. This is crucial for
+		// correctly handling multi-byte sequences and workarounds.
+	greedy:
+		for {
+			select {
+			case b := <-r.dataChan:
+				r.buf = append(r.buf, b)
+			default:
+				break greedy
+			}
+		}
+
 		if len(r.buf) > 0 {
 			// Optimization: Only attempt to parse sequences if the buffer starts with ESC.
 			if r.buf[0] == 0x1B {
@@ -112,7 +126,19 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 					r.buf = r.buf[1:]
 					return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_ESCAPE, KeyDown: true}, nil
 				case err := <-r.errChan:
-					if len(r.buf) == 0 { return nil, err }
+					// Drain any data that arrived before the error
+				drain1:
+					for {
+						select {
+						case b := <-r.dataChan:
+							r.buf = append(r.buf, b)
+						default:
+							break drain1
+						}
+					}
+					if len(r.buf) == 0 {
+						return nil, err
+					}
 					continue
 				}
 			}
@@ -125,6 +151,13 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 			if utf8.FullRune(r.buf) {
 				character, size := utf8.DecodeRune(r.buf)
 				consumed := size
+
+				// Far2l workaround: some versions of far2l's terminal emulator
+				// send an extra space after the '=' character.
+				if character == '=' && len(r.buf) > size && r.buf[size] == ' ' {
+					consumed++
+				}
+
 				r.buf = r.buf[consumed:]
 				if event := translateLegacyByte(character); event != nil {
 					return event, nil
@@ -137,7 +170,19 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 		case b := <-r.dataChan:
 			r.buf = append(r.buf, b)
 		case err := <-r.errChan:
-			if len(r.buf) == 0 { return nil, err }
+			// Prioritize data over error to avoid premature EOF
+		drain2:
+			for {
+				select {
+				case b := <-r.dataChan:
+					r.buf = append(r.buf, b)
+				default:
+					break drain2
+				}
+			}
+			if len(r.buf) == 0 {
+				return nil, err
+			}
 		}
 	}
 }
