@@ -55,7 +55,7 @@ func NewReader(in io.Reader) *Reader {
 					for i := 0; i < n; i++ { r.dataChan <- tmp[i] }
 				}
 				if n > 0 {
-					Log("Reader(syscall): Read %d bytes: %v", n, tmp[:n])
+					//Log("Reader(syscall): Read %d bytes: %v", n, tmp[:n])
 				} else if err != nil {
 					Log("Reader(syscall): Read error: %v", err)
 				}
