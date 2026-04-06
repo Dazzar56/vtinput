@@ -78,12 +78,12 @@ func TestParseFar2lAPC(t *testing.T) {
 
 	// Test keyboard input f2l
 	stk := Far2lStack{}
-	stk.PushU32(uint32('a')) // char
-	stk.PushU32(0) // modifiers
-	stk.PushU16(0x1e) // scancode
+	stk.PushU16(1)    // repeat
 	stk.PushU16(0x41) // vk
-	stk.PushU16(1) // repeat
-	stk.PushU8('K') // cmd
+	stk.PushU16(0x1e) // scancode
+	stk.PushU32(0)    // modifiers
+	stk.PushU32(uint32('a')) // char
+	stk.PushU8('K')   // cmd
 
 	b64 := base64.StdEncoding.EncodeToString(stk)
 	data2 := []byte("\x1b_f2l:" + b64 + "\x07")
