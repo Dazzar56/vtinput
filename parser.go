@@ -132,6 +132,9 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 		event = &InputEvent{Type: Far2lEventType, Far2lCommand: "event"}
 	} else if strings.HasPrefix(paramStr, "far2l") {
 		content := strings.TrimPrefix(paramStr, "far2l")
+		if content == "" {
+			return nil, terminatorIdx + 1, nil
+		}
 		if content == "1" {
 			return &InputEvent{Type: Far2lEventType, Far2lCommand: "enable"}, terminatorIdx + 1, nil
 		} else if content == "0" {

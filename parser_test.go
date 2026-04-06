@@ -99,6 +99,64 @@ func TestParseFar2lAPC(t *testing.T) {
 	}
 }
 
+func TestParseFar2lAPC_Mouse(t *testing.T) {
+	// Parser Pop order for 'm': Flags (U8), Mods (U8), Btn (U16), Y (U16), X (U16)
+	// We must push in REVERSE order
+	stk := Far2lStack{}
+	stk.PushU16(10)   // X
+	stk.PushU16(20)   // Y
+	stk.PushU16(1)    // Button (Left)
+	stk.PushU8(0x10)  // Mods (Shift)
+	stk.PushU8(0)     // Flags (0 = normal)
+	stk.PushU8('m')   // cmd
+
+	b64 := base64.StdEncoding.EncodeToString(stk)
+	data := []byte("\x1b_f2l:" + b64 + "\x07")
+
+	evt, _, err := ParseFar2lAPC(data)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+
+	if evt.Type != MouseEventType {
+		t.Errorf("Expected MouseEventType, got %v", evt.Type)
+	}
+	if evt.MouseX != 10 || evt.MouseY != 20 || evt.ButtonState != FromLeft1stButtonPressed {
+		t.Errorf("Mouse data corrupted: %+v", evt)
+	}
+	if (evt.ControlKeyState & ShiftPressed) == 0 {
+		t.Error("Modifiers lost in Far2l mouse event")
+	}
+}
+
+func TestParseFar2lAPC_Resize(t *testing.T) {
+	stk := Far2lStack{}
+	stk.PushU8('S') // command 'S' = Screen Resize
+	b64 := base64.StdEncoding.EncodeToString(stk)
+	data := []byte("\x1b_f2l:" + b64 + "\x07")
+
+	evt, _, _ := ParseFar2lAPC(data)
+	if evt == nil || evt.Type != ResizeEventType {
+		t.Error("Failed to parse Far2l resize event")
+	}
+}
+
+func TestParseFar2lAPC_Invalid(t *testing.T) {
+	// 1. Broken B64
+	data := []byte("\x1b_far2l:!!!invalid!!!\x07")
+	evt, _, err := ParseFar2lAPC(data)
+	if err != nil || evt != nil {
+		t.Error("Invalid B64 should be handled gracefully (return nil event, no error)")
+	}
+
+	// 2. Empty payload
+	data2 := []byte("\x1b_far2l\x07")
+	evt2, _, _ := ParseFar2lAPC(data2)
+	if evt2 != nil {
+		t.Errorf("Empty APC should return nil event, got %v", evt2.Far2lCommand)
+	}
+}
+
 func TestParseLegacyCSI(t *testing.T) {
 	tests := []struct {
 		name     string
