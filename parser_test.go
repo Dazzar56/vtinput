@@ -2,6 +2,7 @@ package vtinput
 
 import (
 	"bytes"
+	"encoding/base64"
 	"reflect"
 	"testing"
 	"time"
@@ -59,6 +60,42 @@ func TestParseWin32InputEvent_Defaults(t *testing.T) {
 	}
 	if event.VirtualKeyCode != 0 || event.RepeatCount != 1 || event.KeyDown != false {
 		t.Errorf("Defaults not applied correctly: %+v", event)
+	}
+}
+func TestParseFar2lAPC(t *testing.T) {
+	// Test enable
+	data := []byte("\x1b_far2l1\x1b\\")
+	evt, consumed, err := ParseFar2lAPC(data)
+	if err != nil {
+		t.Fatalf("ParseFar2lAPC error: %v", err)
+	}
+	if evt.Type != Far2lEventType || evt.Far2lCommand != "enable" {
+		t.Errorf("Unexpected event: %+v", evt)
+	}
+	if consumed != len(data) {
+		t.Errorf("Consumed %d, expected %d", consumed, len(data))
+	}
+
+	// Test keyboard input f2l
+	stk := Far2lStack{}
+	stk.PushU32(uint32('a')) // char
+	stk.PushU32(0) // modifiers
+	stk.PushU16(0x1e) // scancode
+	stk.PushU16(0x41) // vk
+	stk.PushU16(1) // repeat
+	stk.PushU8('K') // cmd
+
+	b64 := base64.StdEncoding.EncodeToString(stk)
+	data2 := []byte("\x1b_f2l:" + b64 + "\x07")
+	evt2, consumed2, err2 := ParseFar2lAPC(data2)
+	if err2 != nil {
+		t.Fatalf("ParseFar2lAPC error: %v", err2)
+	}
+	if evt2.Type != KeyEventType || evt2.Char != 'a' || evt2.VirtualKeyCode != 0x41 || evt2.RepeatCount != 1 || !evt2.KeyDown {
+		t.Errorf("Unexpected event: %+v", evt2)
+	}
+	if consumed2 != len(data2) {
+		t.Errorf("Consumed %d, expected %d", consumed2, len(data2))
 	}
 }
 

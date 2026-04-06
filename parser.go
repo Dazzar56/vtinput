@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	"encoding/base64"
 )
 
 var (
@@ -83,6 +84,125 @@ func mapTildeToVK(code int) uint16 {
 	return 0
 }
 
+// scanAPC looks for an APC sequence (ESC _ ... terminator).
+func scanAPC(data []byte) (terminatorIdx int, err error) {
+	if len(data) < 2 {
+		return 0, ErrIncomplete
+	}
+	if data[0] != 0x1B || data[1] != '_' {
+		return 0, ErrInvalidSequence
+	}
+	lastEsc := false
+	for i := 2; i < len(data); i++ {
+		if data[i] == 0x07 {
+			return i, nil
+		}
+		if data[i] == '\\' && lastEsc {
+			return i, nil // Standard ST terminator
+		}
+		lastEsc = (data[i] == 0x1B)
+	}
+	return 0, ErrIncomplete
+}
+// ParseFar2lAPC parses Far2l specific APC sequences.
+func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
+	terminatorIdx, err := scanAPC(data)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	payloadEnd := terminatorIdx
+	if data[terminatorIdx] == '\\' {
+		payloadEnd-- // Skip the ESC before '\'
+	}
+
+	if payloadEnd < 2 {
+		return nil, terminatorIdx + 1, nil
+	}
+
+	paramStr := string(data[2:payloadEnd])
+
+	// Robust prefix and separator handling
+	var b64 string
+	var event *InputEvent
+
+	if strings.HasPrefix(paramStr, "f2l") {
+		b64 = strings.TrimPrefix(paramStr, "f2l")
+		b64 = strings.TrimPrefix(b64, ":")
+		event = &InputEvent{Type: Far2lEventType, Far2lCommand: "event"}
+	} else if strings.HasPrefix(paramStr, "far2l") {
+		content := strings.TrimPrefix(paramStr, "far2l")
+		if content == "1" {
+			return &InputEvent{Type: Far2lEventType, Far2lCommand: "enable"}, terminatorIdx + 1, nil
+		} else if content == "0" {
+			return &InputEvent{Type: Far2lEventType, Far2lCommand: "disable"}, terminatorIdx + 1, nil
+		} else if content == "ok" {
+			return &InputEvent{Type: Far2lEventType, Far2lCommand: "ok"}, terminatorIdx + 1, nil
+		}
+
+		b64 = strings.TrimPrefix(content, ":")
+		event = &InputEvent{Type: Far2lEventType, Far2lCommand: "reply"}
+		// If it has a colon, it's an interaction request from remote to us
+		if strings.HasPrefix(content, ":") {
+			event.Far2lCommand = "interact"
+		}
+	}
+
+	if event != nil {
+		if m := len(b64) % 4; m != 0 {
+			b64 += strings.Repeat("=", 4-m)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			Log("Reader: Far2l Base64 decode failed for %q: %v", b64, err)
+			return nil, terminatorIdx + 1, nil
+		}
+
+		event.Far2lData = decoded
+		// For 'f2l' prefix, we unpack the stack into a native KeyEvent/MouseEvent
+		if event.Far2lCommand == "event" {
+			stk := (*Far2lStack)(&decoded)
+			cmd := stk.PopU8()
+			switch cmd {
+			case 'K', 'k':
+				event.Type = KeyEventType
+				event.Char = rune(stk.PopU32())
+				event.ControlKeyState = stk.PopU32()
+				event.VirtualScanCode = stk.PopU16()
+				event.VirtualKeyCode = stk.PopU16()
+				event.RepeatCount = stk.PopU16()
+				event.KeyDown = (cmd == 'K')
+			case 'C', 'c':
+				event.Type = KeyEventType
+				event.Char = rune(stk.PopU16())
+				event.ControlKeyState = uint32(stk.PopU16())
+				event.VirtualKeyCode = uint16(stk.PopU8())
+				event.RepeatCount = 1
+				event.KeyDown = (cmd == 'C')
+			case 'M':
+				event.Type = MouseEventType
+				event.MouseEventFlags = stk.PopU32()
+				event.ControlKeyState = stk.PopU32()
+				event.ButtonState = stk.PopU32()
+				event.MouseY = stk.PopU16()
+				event.MouseX = stk.PopU16()
+			case 'm':
+				event.Type = MouseEventType
+				event.MouseEventFlags = uint32(stk.PopU8())
+				event.ControlKeyState = uint32(stk.PopU8())
+				encBtn := stk.PopU16()
+				event.ButtonState = uint32(encBtn&0xFF) | uint32((encBtn&0xFF00)<<8)
+				event.MouseY = stk.PopU16()
+				event.MouseX = stk.PopU16()
+			case 'S':
+				event.Type = ResizeEventType
+			}
+		}
+		return event, terminatorIdx + 1, nil
+	}
+
+	return nil, terminatorIdx + 1, nil // Ignored APC
+}
 // ParseWin32InputEvent attempts to parse a byte slice containing a Win32 Input Mode sequence.
 // Format: CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
 //
@@ -158,6 +278,9 @@ func ParseLegacyCSI(data []byte) (*InputEvent, int, error) {
 			event.ControlKeyState |= ShiftPressed
 		}
 	}
+	if event.VirtualKeyCode == 0 {
+		Log("Reader: Warning - CSI command '%c' not mapped. Params: %v", command, params)
+	}
 
 	if event.VirtualKeyCode == 0 {
 		return nil, 0, ErrInvalidSequence
@@ -196,6 +319,20 @@ func ParseLegacySS3(data []byte) (*InputEvent, int, error) {
 	}
 
 	return event, 3, nil
+}
+// ParseDSRReply parses Device Status Report replies (ESC [ <params> n).
+// These are not input events for the application, but must be consumed to keep the buffer clean.
+func ParseDSRReply(data []byte) (*InputEvent, int, error) {
+	terminatorIdx, command, err := scanCSI(data)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if command == 'n' {
+		// Valid DSR reply, consume and ignore.
+		return nil, terminatorIdx + 1, nil
+	}
+	return nil, 0, ErrInvalidSequence
 }
 // ParseMouseSGR handles modern SGR mouse sequences (ESC [ < ...).
 func ParseMouseSGR(data []byte) (*InputEvent, int, error) {

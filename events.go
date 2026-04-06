@@ -40,6 +40,8 @@ const (
 	MouseEventType EventType = 0x0002
 	FocusEventType EventType = 0x0010
 	PasteEventType EventType = 0x0020
+	Far2lEventType EventType = 0x0040
+	ResizeEventType EventType = 0x0080
 )
 
 // InputEvent is a generic container for any event (Key, Mouse, Focus).
@@ -67,6 +69,9 @@ type InputEvent struct {
 
 	// Paste Event Data
 	PasteStart bool
+	// Far2l Extension Event Data
+	Far2lCommand string
+	Far2lData    []byte
 
 	// Shared
 	ControlKeyState uint32
@@ -156,6 +161,12 @@ func (e InputEvent) String() string {
 			state = "START"
 		}
 		return fmt.Sprintf("Paste{%s}", state)
+	}
+	if e.Type == Far2lEventType {
+		return fmt.Sprintf("Far2l{%s len:%d}", e.Far2lCommand, len(e.Far2lData))
+	}
+	if e.Type == ResizeEventType {
+		return "TerminalResized{}"
 	}
 
 	return fmt.Sprintf("Event{Type:%d Mods:0x%X}%s", e.Type, e.ControlKeyState, legacyStr)
