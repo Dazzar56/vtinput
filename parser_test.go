@@ -156,6 +156,32 @@ func TestParseFar2lAPC_MouseWheel(t *testing.T) {
 		t.Errorf("Expected WheelDirection 1, got %v", evt.WheelDirection)
 	}
 }
+func TestParseFar2lAPC_MouseCompact(t *testing.T) {
+	// Compact mouse 'm'
+	// Pop order: Y (U16), X (U16), encBtn (U16), Mods (U8), Flags (U8)
+	stk := Far2lStack{}
+	stk.PushU16(5)   // X
+	stk.PushU16(5)   // Y
+	stk.PushU16(1)   // encBtn: Left (bit 0)
+	stk.PushU8(0x08) // Mods: Ctrl
+	stk.PushU8(0)    // Flags: Normal
+	stk.PushU8('m')
+
+	b64 := base64.StdEncoding.EncodeToString(stk)
+	data := []byte("\x1b_f2l:" + b64 + "\x07")
+
+	evt, _, err := ParseFar2lAPC(data)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+
+	if evt.Type != MouseEventType || !evt.KeyDown {
+		t.Errorf("Invalid compact mouse event: %+v", evt)
+	}
+	if evt.MouseX != 5 || (evt.ControlKeyState&LeftCtrlPressed) == 0 {
+		t.Error("Data or modifiers lost in compact mouse event")
+	}
+}
 
 func TestParseFar2lAPC_Resize(t *testing.T) {
 	stk := Far2lStack{}
