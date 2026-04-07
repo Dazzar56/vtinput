@@ -189,6 +189,15 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 				event.ButtonState = stk.PopU32()
 				event.MouseY = stk.PopU16()
 				event.MouseX = stk.PopU16()
+				event.KeyDown = true
+				if (event.MouseEventFlags & MouseWheeled) != 0 {
+					delta := int16(event.ButtonState >> 16)
+					if delta > 0 {
+						event.WheelDirection = 1
+					} else if delta < 0 {
+						event.WheelDirection = -1
+					}
+				}
 			case 'm':
 				event.Type = MouseEventType
 				event.MouseEventFlags = uint32(stk.PopU8())
@@ -197,6 +206,15 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 				event.ButtonState = uint32(encBtn&0xFF) | uint32((encBtn&0xFF00)<<8)
 				event.MouseY = stk.PopU16()
 				event.MouseX = stk.PopU16()
+				event.KeyDown = true
+				if (event.MouseEventFlags & MouseWheeled) != 0 {
+					delta := int16(event.ButtonState >> 16)
+					if delta > 0 {
+						event.WheelDirection = 1
+					} else if delta < 0 {
+						event.WheelDirection = -1
+					}
+				}
 			case 'S':
 				event.Type = ResizeEventType
 			}

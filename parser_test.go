@@ -127,6 +127,34 @@ func TestParseFar2lAPC_Mouse(t *testing.T) {
 	if (evt.ControlKeyState & ShiftPressed) == 0 {
 		t.Error("Modifiers lost in Far2l mouse event")
 	}
+	if !evt.KeyDown {
+		t.Error("KeyDown should be true for Far2l mouse events")
+	}
+}
+
+func TestParseFar2lAPC_MouseWheel(t *testing.T) {
+	stk := Far2lStack{}
+	stk.PushU16(10)   // X
+	stk.PushU16(20)   // Y
+	stk.PushU32(0x00780000) // ButtonState with wheel delta > 0 in high word (e.g. 120 << 16)
+	stk.PushU32(0)    // Mods
+	stk.PushU32(MouseWheeled) // Flags
+	stk.PushU8('M')   // cmd (using normal M)
+
+	b64 := base64.StdEncoding.EncodeToString(stk)
+	data := []byte("\x1b_f2l:" + b64 + "\x07")
+
+	evt, _, err := ParseFar2lAPC(data)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+
+	if evt.Type != MouseEventType {
+		t.Errorf("Expected MouseEventType, got %v", evt.Type)
+	}
+	if evt.WheelDirection != 1 {
+		t.Errorf("Expected WheelDirection 1, got %v", evt.WheelDirection)
+	}
 }
 
 func TestParseFar2lAPC_Resize(t *testing.T) {
