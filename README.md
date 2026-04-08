@@ -4,6 +4,8 @@
 
 **Advanced Terminal Input Parsing for Go**
 
+*Built from ground up for [vtui](https://github.com/unxed/vtui) and [f4](https://github.com/unxed/f4).*
+
 `vtinput` is a standalone, cross-platform Go library designed to solve the historical mess of terminal keyboard input. It provides robust parsing for modern terminal input protocols, allowing TUI applications to handle complex key combinations, mouse events, and bracketed paste with absolute precision.
 
 This library was initially developed for the [f4](https://github.com/unxed/f4) project (a Far Manager clone in Go) because standard Go terminal libraries (like `term` or `tcell`) often rely on legacy `terminfo` mappings only and cannot reliably distinguish between combinations like `Enter` and `Ctrl+Enter`, or `Tab` and `Shift+Tab`.
