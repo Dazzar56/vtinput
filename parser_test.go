@@ -235,6 +235,99 @@ func TestParseLegacyCSI(t *testing.T) {
 		})
 	}
 }
+func TestParseLegacyCSI_RejectsKittyRelease(t *testing.T) {
+	// A Kitty release event for Down Arrow (CSI 1 ; 1 : 3 B)
+	// It should be rejected by Legacy parser because it contains a colon.
+	data := []byte("\x1b[1;1:3B")
+	event, _, err := ParseLegacyCSI(data)
+	if err != ErrInvalidSequence {
+		t.Errorf("Expected ErrInvalidSequence, got %v", err)
+	}
+	if event != nil {
+		t.Errorf("Expected event to be nil, got %+v", event)
+	}
+}
+func TestDecodeAnsiModifiers_Bounds(t *testing.T) {
+	// 1. Код 0 или 1 должен возвращать 0 (без модификаторов)
+	if mods := decodeAnsiModifiers(0); mods != 0 {
+		t.Errorf("decodeAnsiModifiers(0): expected 0, got 0x%X", mods)
+	}
+	if mods := decodeAnsiModifiers(1); mods != 0 {
+		t.Errorf("decodeAnsiModifiers(1): expected 0, got 0x%X", mods)
+	}
+
+	// 2. Код 2 должен быть Shift (2-1 = 1)
+	if mods := decodeAnsiModifiers(2); (mods & ShiftPressed) == 0 {
+		t.Errorf("decodeAnsiModifiers(2): expected Shift bit, got 0x%X", mods)
+	}
+}
+
+func TestParseLegacyCSI_ModernSequences(t *testing.T) {
+	// Проверяем, что парсер не пытается "проглотить" мышиный SGR (с <)
+	// или сложные последовательности Kitty (с :)
+	testCases := [][]byte{
+		[]byte("\x1b[<0;10;20M"), // Mouse SGR
+		[]byte("\x1b[1;1:3B"),     // Kitty release
+		[]byte("\x1b[97:65;5u"),   // Kitty char with base
+	}
+
+	for _, tc := range testCases {
+		evt, _, err := ParseLegacyCSI(tc)
+		if err != ErrInvalidSequence {
+			t.Errorf("ParseLegacyCSI(%q): expected ErrInvalidSequence, got %v (evt: %v)", tc, err, evt)
+		}
+	}
+}
+
+func TestParseLegacyCSI_GarbageParams(t *testing.T) {
+	// Символ '?' (0x3F) допустим в параметрах CSI, но strconv.Atoi на нем упадет.
+	// Второй параметр должен упасть в дефолт (1), модификаторы должны быть 0.
+	data := []byte("\x1b[1;?A")
+	evt, _, err := ParseLegacyCSI(data)
+	if err != nil {
+		t.Fatalf("ParseLegacyCSI failed on garbage param: %v", err)
+	}
+	if evt.ControlKeyState != 0 {
+		t.Errorf("Expected 0 mods for garbage param, got 0x%X", evt.ControlKeyState)
+	}
+}
+
+func TestParseLegacyCSI_UnmappedCommand(t *testing.T) {
+	// Команда 'p' валидна для CSI, но не мапится на VK в нашем legacy парсере.
+	data := []byte("\x1b[1;1p")
+	evt, _, err := ParseLegacyCSI(data)
+	if err != ErrInvalidSequence {
+		t.Errorf("Expected ErrInvalidSequence for unmapped command 'p', got %v (evt: %v)", err, evt)
+	}
+}
+
+func TestDecodeAnsiModifiers_FullFlags(t *testing.T) {
+	// Проверка всех поддерживаемых комбинаций (1 + bitmask)
+	// 1: none
+	// 2: Shift (1)
+	// 3: Alt (2)
+	// 4: Shift+Alt (3)
+	// 5: Ctrl (4)
+	// 9: Meta/Super (8)
+
+	tests := []struct {
+		code int
+		want uint32
+	}{
+		{1, 0},
+		{2, ShiftPressed},
+		{3, LeftAltPressed},
+		{5, LeftCtrlPressed},
+		{9, EnhancedKey},
+		{6, LeftCtrlPressed | ShiftPressed}, // 1 + 1 + 4
+	}
+
+	for _, tt := range tests {
+		if got := decodeAnsiModifiers(tt.code); got != tt.want {
+			t.Errorf("decodeAnsiModifiers(%d): got 0x%X, want 0x%X", tt.code, got, tt.want)
+		}
+	}
+}
 
 func TestParseLegacySS3(t *testing.T) {
 	data := []byte("\x1bOR")

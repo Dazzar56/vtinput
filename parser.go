@@ -41,6 +41,9 @@ func scanCSI(data []byte) (terminatorIdx int, command byte, err error) {
 // decodeAnsiModifiers converts TUI modifier codes (1 + bitmask) to vtinput flags.
 // Supported by Kitty and modern Legacy CSI.
 func decodeAnsiModifiers(modCode int) uint32 {
+	if modCode <= 1 {
+		return 0
+	}
 	actual := uint32(0)
 	bits := modCode - 1
 	if (bits & 0x01) != 0 { actual |= ShiftPressed }
@@ -277,10 +280,17 @@ func ParseLegacyCSI(data []byte) (*InputEvent, int, error) {
 		return nil, 0, err
 	}
 
-	params := strings.Split(string(data[2:terminatorIdx]), ";")
+	paramStr := string(data[2:terminatorIdx])
+	// Reject modern sequences containing colon (sub-parameters) or angle brackets
+	if strings.ContainsAny(paramStr, ":<>") {
+		return nil, 0, ErrInvalidSequence
+	}
+
+	params := strings.Split(paramStr, ";")
 	getParam := func(idx int, def int) int {
 		if len(params) <= idx || params[idx] == "" { return def }
-		val, _ := strconv.Atoi(params[idx])
+		val, err := strconv.Atoi(params[idx])
+		if err != nil { return def }
 		return val
 	}
 
