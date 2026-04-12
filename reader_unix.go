@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func NewReader(in io.Reader) *Reader {
@@ -35,18 +37,19 @@ func NewReader(in io.Reader) *Reader {
 		for {
 			if isAFile {
 				// Advanced logic for real terminals (session resurrection support)
-				readFds := &syscall.FdSet{}
-				readFds.Bits[fd/64] |= 1 << (uint(fd) % 64)
-				readFds.Bits[r.stopPipe[0]/64] |= 1 << (uint(r.stopPipe[0]) % 64)
+				fds := []unix.PollFd{
+					{Fd: int32(fd), Events: unix.POLLIN},
+					{Fd: int32(r.stopPipe[0]), Events: unix.POLLIN},
+				}
 
-				_, err := syscall.Select(maxInt(fd, r.stopPipe[0])+1, readFds, nil, nil, nil)
+				_, err := unix.Poll(fds, -1)
 				if err != nil {
-					if err == syscall.EINTR { continue }
+					if err == unix.EINTR { continue }
 					r.errChan <- err
 					return
 				}
 
-				if (readFds.Bits[r.stopPipe[0]/64] & (1 << (uint(r.stopPipe[0]) % 64))) != 0 {
+				if fds[1].Revents != 0 {
 					return
 				}
 
@@ -88,11 +91,6 @@ func NewReader(in io.Reader) *Reader {
 	}()
 
 	return r
-}
-
-func maxInt(a, b int) int {
-	if a > b { return a }
-	return b
 }
 
 func (r *Reader) platformClose() {
