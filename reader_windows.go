@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"unsafe"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
