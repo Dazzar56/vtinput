@@ -118,12 +118,18 @@ func (r *Reader) winAPILoop(handle windows.Handle) {
 		}
 
 		var numRead uint32
+		callStart := time.Now()
 		ret, _, err := procReadConsoleInputW.Call(
 			uintptr(handle),
 			uintptr(unsafe.Pointer(&records[0])),
 			uintptr(len(records)),
 			uintptr(unsafe.Pointer(&numRead)),
 		)
+		callDur := time.Since(callStart)
+
+		if callDur > 100*time.Millisecond && numRead > 0 {
+			Log("PROFILE: WinAPI Read Wait: %v (Events: %d)", callDur, numRead)
+		}
 
 		if ret == 0 {
 			r.errChan <- err
