@@ -83,6 +83,16 @@ func EnableProtocols(p Protocol) (func(), error) {
 		disableSeq = seqDisableFar2l + disableSeq
 	}
 
+	// If we are using WinAPI for input, we MUST NOT enable ANSI input protocols
+	// like Kitty or Win32InputMode, as they may cause the console host to
+	// suppress the raw KEY_EVENT_RECORDs we need.
+	if InputMode == "winapi" {
+		Log("VTINPUT: WinAPI mode active, suppressing ANSI input protocol sequences.")
+		return func() {
+			term.Restore(fd, oldState)
+		}, nil
+	}
+
 	// 4. Send activation sequences
 	if _, err := os.Stdout.WriteString(enableSeq); err != nil {
 		term.Restore(fd, oldState)
