@@ -104,12 +104,6 @@ func (r *Reader) winAPILoop(handle windows.Handle) {
 	}
 
 	records := make([]inputRecord, 128)
-		Log("Reader: WinAPI SetConsoleMode failure: %v", err)
-	} else {
-		Log("Reader: WinAPI ConsoleMode updated: 0x%X -> 0x%X", oldMode, newMode)
-	}
-
-	records := make([]inputRecord, 128)
 	for {
 		select {
 		case <-r.done:
