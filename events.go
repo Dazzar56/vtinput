@@ -159,7 +159,7 @@ func (e InputEvent) String() string {
 		if e.SetFocus {
 			state = "IN"
 		}
-		return fmt.Sprintf("Focus{%s}", state)
+		return fmt.Sprintf("Focus{%s Src:%s}", state, e.InputSource)
 	}
 
 	if e.Type == PasteEventType {
@@ -167,7 +167,7 @@ func (e InputEvent) String() string {
 		if e.PasteStart {
 			state = "START"
 		}
-		return fmt.Sprintf("Paste{%s}", state)
+		return fmt.Sprintf("Paste{%s Src:%s}", state, e.InputSource)
 	}
 	if e.Type == Far2lEventType {
 		return fmt.Sprintf("Far2l{%s len:%d}", e.Far2lCommand, len(e.Far2lData))

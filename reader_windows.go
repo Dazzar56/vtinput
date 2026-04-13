@@ -28,6 +28,8 @@ func NewReader(in io.Reader) *Reader {
 		done:            make(chan struct{}),
 	}
 
+	Log("Reader: NewReader init, InputMode global setting: %q", InputMode)
+
 	useWinAPI := true // Default on Windows
 	if InputMode == "winapi" {
 		useWinAPI = true
@@ -40,12 +42,17 @@ func NewReader(in io.Reader) *Reader {
 			handle := windows.Handle(f.Fd())
 			var mode uint32
 			if err := windows.GetConsoleMode(handle, &mode); err == nil {
-				Log("Reader: Starting WinAPI loop for console input")
+				Log("Reader: Successfully identified console handle (FD %d). Mode: 0x%X", f.Fd(), mode)
+				Log("Reader: Starting WinAPI loop for native event queue")
 				go r.winAPILoop(handle)
 				return r
+			} else {
+				Log("Reader: GetConsoleMode failed for FD %d: %v", f.Fd(), err)
 			}
+		} else {
+			Log("Reader: Input is not an *os.File, cannot use WinAPI")
 		}
-		Log("Reader: InputMode winapi requested but input is not a console. Falling back to ANSI.")
+		Log("Reader: Falling back to ANSI byte-stream parser.")
 	}
 
 	Log("Reader: Starting ANSI byte-stream loop")
@@ -75,11 +82,16 @@ func (r *Reader) ansiLoop() {
 }
 
 func (r *Reader) winAPILoop(handle windows.Handle) {
-	var mode uint32
-	windows.GetConsoleMode(handle, &mode)
-	mode |= 0x0008 | 0x0010 | 0x0080 // ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS
-	mode &^= 0x0001                  // Clear ENABLE_PROCESSED_INPUT to get raw Ctrl+C instead of signal
-	windows.SetConsoleMode(handle, mode)
+	var oldMode uint32
+	windows.GetConsoleMode(handle, &oldMode)
+	newMode := oldMode | 0x0008 | 0x0010 | 0x0080 // ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS
+	newMode &^= 0x0001                            // Clear ENABLE_PROCESSED_INPUT to get raw Ctrl+C instead of signal
+
+	if err := windows.SetConsoleMode(handle, newMode); err != nil {
+		Log("Reader: WinAPI SetConsoleMode failure: %v", err)
+	} else {
+		Log("Reader: WinAPI ConsoleMode updated: 0x%X -> 0x%X", oldMode, newMode)
+	}
 
 	records := make([]inputRecord, 128)
 	for {
