@@ -84,10 +84,26 @@ func (r *Reader) ansiLoop() {
 func (r *Reader) winAPILoop(handle windows.Handle) {
 	var oldMode uint32
 	windows.GetConsoleMode(handle, &oldMode)
-	newMode := oldMode | 0x0008 | 0x0010 | 0x0080 // ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS
-	newMode &^= 0x0001                            // Clear ENABLE_PROCESSED_INPUT to get raw Ctrl+C instead of signal
+
+	// We need to set some flags and, crucially, CLEAR others that interfere with raw input.
+	// Set: WINDOW_INPUT (0x8), MOUSE_INPUT (0x10), EXTENDED_FLAGS (0x80)
+	newMode := oldMode | 0x0008 | 0x0010 | 0x0080
+
+	// Clear:
+	// 0x0001: PROCESSED_INPUT (to get raw Ctrl+C)
+	// 0x0002: LINE_INPUT (get keys immediately)
+	// 0x0004: ECHO_INPUT
+	// 0x0040: QUICK_EDIT_MODE (to allow mouse events instead of selection)
+	// 0x0200: VIRTUAL_TERMINAL_INPUT (CRITICAL: if this is ON, ReadConsoleInputW gets no keys!)
+	newMode &^= (0x0001 | 0x0002 | 0x0004 | 0x0040 | 0x0200)
 
 	if err := windows.SetConsoleMode(handle, newMode); err != nil {
+		Log("Reader: WinAPI SetConsoleMode failure: %v", err)
+	} else {
+		Log("Reader: WinAPI ConsoleMode updated: 0x%X -> 0x%X (Cleared VT_INPUT and QuickEdit)", oldMode, newMode)
+	}
+
+	records := make([]inputRecord, 128)
 		Log("Reader: WinAPI SetConsoleMode failure: %v", err)
 	} else {
 		Log("Reader: WinAPI ConsoleMode updated: 0x%X -> 0x%X", oldMode, newMode)
@@ -179,6 +195,9 @@ func (r *Reader) winAPILoop(handle windows.Handle) {
 
 			case 0x0004: // WINDOW_BUFFER_SIZE_EVENT
 				r.NativeEventChan <- &InputEvent{Type: ResizeEventType, InputSource: "winapi"}
+			default:
+				// Log other events like FOCUS_EVENT (0x10) or MENU_EVENT (0x8)
+				Log("Reader: WinAPI ignored event type 0x%04X", rec.EventType)
 			}
 		}
 	}
