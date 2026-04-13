@@ -312,7 +312,10 @@ func ParseLegacyCSI(data []byte) (*InputEvent, int, error) {
 		}
 	}
 	if event.VirtualKeyCode == 0 {
-		Log("Reader: Warning - CSI command '%c' not mapped. Params: %v", command, params)
+		// Silence warnings for known modern terminators handled by other parsers (Win32 '_', Kitty 'u')
+		if command != '_' && command != 'u' {
+			Log("Reader: Warning - CSI command '%c' not mapped. Params: %v", command, params)
+		}
 	}
 
 	if event.VirtualKeyCode == 0 {
