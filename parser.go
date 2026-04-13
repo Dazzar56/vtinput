@@ -250,6 +250,7 @@ func ParseWin32InputEvent(data []byte) (*InputEvent, int, error) {
 	event := &InputEvent{
 		Type:        KeyEventType,
 		RepeatCount: 1,
+		InputSource: "win32",
 	}
 
 	parseUint := func(s string) uint32 {
@@ -299,6 +300,7 @@ func ParseLegacyCSI(data []byte) (*InputEvent, int, error) {
 		KeyDown:         true,
 		ControlKeyState: decodeAnsiModifiers(getParam(1, 1)),
 		IsLegacy:        true,
+		InputSource:     "legacy_csi",
 	}
 
 	if command == '~' {
@@ -333,9 +335,10 @@ func ParseLegacySS3(data []byte) (*InputEvent, int, error) {
 	}
 
 	event := &InputEvent{
-		Type:     KeyEventType,
-		KeyDown:  true,
-		IsLegacy: true,
+		Type:        KeyEventType,
+		KeyDown:     true,
+		IsLegacy:    true,
+		InputSource: "legacy_ss3",
 	}
 
 	switch data[2] {
@@ -398,10 +401,11 @@ func ParseMouseSGR(data []byte) (*InputEvent, int, error) {
 	if py > 0 { py-- }
 
 	event := &InputEvent{
-		Type:    MouseEventType,
-		MouseX:  uint16(px),
-		MouseY:  uint16(py),
-		KeyDown: (command == 'M'), // 'M' = press/move, 'm' = release
+		Type:        MouseEventType,
+		MouseX:      uint16(px),
+		MouseY:      uint16(py),
+		KeyDown:     (command == 'M'), // 'M' = press/move, 'm' = release
+		InputSource: "sgr_mouse",
 	}
 
 	// Decode Pb bits:
@@ -489,7 +493,8 @@ func ParseKitty(data []byte) (*InputEvent, int, error) {
 	modifState := params[1][0]
 
 	event := &InputEvent{
-		Type: KeyEventType,
+		Type:        KeyEventType,
+		InputSource: "kitty",
 	}
 
 	if params[0][0] > 0 {

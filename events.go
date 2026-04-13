@@ -32,6 +32,9 @@ const (
 	MouseHWheeled   = 0x0008
 )
 
+// InputMode defines the preferred input parser method. Valid values: "", "ansi", "winapi".
+var InputMode string
+
 // EventType constants
 type EventType uint16
 
@@ -76,6 +79,10 @@ type InputEvent struct {
 	// Shared
 	ControlKeyState uint32
 
+	// InputSource tracks which parser generated this event (e.g., "win32", "kitty", "legacy_csi").
+	// Extremely useful for debugging terminal compatibilities.
+	InputSource string
+
 	// IsLegacy indicates that this event comes from a protocol that does not support
 	// explicit KeyUp events (e.g. standard ANSI). The application may need to
 	// simulate KeyUp after a timeout.
@@ -112,8 +119,8 @@ func (e InputEvent) String() string {
 			}
 		}
 
-		return fmt.Sprintf("Key{VK:0x%X Scan:0x%X%s%s %s Mods:0x%X}%s",
-			e.VirtualKeyCode, e.VirtualScanCode, charStr, baseStr, state, e.ControlKeyState, legacyStr)
+		return fmt.Sprintf("Key{VK:0x%X Scan:0x%X%s%s %s Mods:0x%X Src:%s}%s",
+			e.VirtualKeyCode, e.VirtualScanCode, charStr, baseStr, state, e.ControlKeyState, e.InputSource, legacyStr)
 	}
 
 	if e.Type == MouseEventType {
@@ -143,8 +150,8 @@ func (e InputEvent) String() string {
 			wheel = " WHEEL_DOWN"
 		}
 
-		return fmt.Sprintf("Mouse{Pos:%d,%d Btn:%s %s%s Mods:0x%X}%s",
-			e.MouseX, e.MouseY, btn, action, wheel, e.ControlKeyState, legacyStr)
+		return fmt.Sprintf("Mouse{Pos:%d,%d Btn:%s %s%s Mods:0x%X Src:%s}%s",
+			e.MouseX, e.MouseY, btn, action, wheel, e.ControlKeyState, e.InputSource, legacyStr)
 	}
 
 	if e.Type == FocusEventType {

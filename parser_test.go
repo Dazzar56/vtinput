@@ -44,6 +44,7 @@ func TestParseWin32InputEvent(t *testing.T) {
 		KeyDown:         true,
 		ControlKeyState: 0x08, // LeftCtrl
 		RepeatCount:     1,
+		InputSource:     "win32",
 	}
 
 	event, consumed, err := ParseWin32InputEvent(data)
@@ -391,6 +392,7 @@ func TestParseKitty(t *testing.T) {
 				KeyDown:         true,
 				ControlKeyState: 0,
 				RepeatCount:     1,
+				InputSource:     "kitty",
 			},
 		},
 		{
@@ -404,6 +406,7 @@ func TestParseKitty(t *testing.T) {
 				KeyDown:         true,
 				ControlKeyState: ShiftPressed,
 				RepeatCount:     1,
+				InputSource:     "kitty",
 			},
 		},
 		{
@@ -417,6 +420,7 @@ func TestParseKitty(t *testing.T) {
 				KeyDown:         true,
 				ControlKeyState: LeftCtrlPressed,
 				RepeatCount:     1,
+				InputSource:     "kitty",
 			},
 		},
 		{
@@ -430,6 +434,7 @@ func TestParseKitty(t *testing.T) {
 				KeyDown:         true,
 				ControlKeyState: LeftCtrlPressed | ShiftPressed,
 				RepeatCount:     1,
+				InputSource:     "kitty",
 			},
 		},
 		{
@@ -443,6 +448,7 @@ func TestParseKitty(t *testing.T) {
 				KeyDown:         false,
 				ControlKeyState: 0,
 				RepeatCount:     1,
+				InputSource:     "kitty",
 			},
 		},
 		{
@@ -454,6 +460,7 @@ func TestParseKitty(t *testing.T) {
 				Char:           0,
 				KeyDown:        true,
 				RepeatCount:    1,
+				InputSource:    "kitty",
 			},
 		},
 		{
@@ -465,6 +472,7 @@ func TestParseKitty(t *testing.T) {
 				Char:           0,
 				KeyDown:        true,
 				RepeatCount:    1,
+				InputSource:    "kitty",
 			},
 		},
 		{
@@ -476,6 +484,7 @@ func TestParseKitty(t *testing.T) {
 				Char:           0, // Tab char usually handled by app logic or VK mapping
 				KeyDown:        true,
 				RepeatCount:    1,
+				InputSource:    "kitty",
 			},
 		},
 		{
@@ -488,6 +497,7 @@ func TestParseKitty(t *testing.T) {
 				KeyDown:         true,
 				ControlKeyState: ShiftPressed | EnhancedKey,
 				RepeatCount:     1,
+				InputSource:     "kitty",
 			},
 		},
 		{
@@ -499,6 +509,7 @@ func TestParseKitty(t *testing.T) {
 				Char:           0,
 				KeyDown:        true,
 				RepeatCount:    1,
+				InputSource:    "kitty",
 			},
 		},
 		{
@@ -511,6 +522,7 @@ func TestParseKitty(t *testing.T) {
 				KeyDown:         true,
 				ControlKeyState: ShiftPressed,
 				RepeatCount:     1,
+				InputSource:     "kitty",
 			},
 		},
 		{
@@ -522,6 +534,7 @@ func TestParseKitty(t *testing.T) {
 				Char:           0,
 				KeyDown:        true,
 				RepeatCount:    1,
+				InputSource:    "kitty",
 			},
 		},
 		{
@@ -534,6 +547,7 @@ func TestParseKitty(t *testing.T) {
 				KeyDown:         true,
 				ControlKeyState: RightCtrlPressed | EnhancedKey,
 				RepeatCount:     1,
+				InputSource:     "kitty",
 			},
 		},
 		{
@@ -750,6 +764,31 @@ func TestReadEvent_Far2lEqualsBug(t *testing.T) {
 	_, err = r.ReadEvent()
 	if err != io.EOF {
 		t.Errorf("Expected EOF after consuming space, got err: %v", err)
+	}
+}
+
+func TestReadEvent_ArkanoidFix(t *testing.T) {
+	// Test parsing of Ctrl+Alt+A in Legacy mode (ESC + \x01)
+	// \x01 is SOH (Start of Header), used as Ctrl+A in many terminals.
+	input := []byte{0x1B, 0x01}
+	r := NewReader(bytes.NewReader(input))
+
+	e, err := r.ReadEvent()
+	if err != nil {
+		t.Fatalf("ReadEvent failed: %v", err)
+	}
+
+	// Should be mapped to 'A' (VK_A = 0x41)
+	if e.VirtualKeyCode != VK_A {
+		t.Errorf("Expected VK_A (0x41), got 0x%X", e.VirtualKeyCode)
+	}
+	// Should have both Ctrl and Alt bits
+	expectedMods := uint32(LeftCtrlPressed | LeftAltPressed)
+	if e.ControlKeyState != expectedMods {
+		t.Errorf("Expected mods 0x%X, got 0x%X", expectedMods, e.ControlKeyState)
+	}
+	if e.InputSource != "legacy_alt_ctrl" {
+		t.Errorf("Expected source legacy_alt_ctrl, got %q", e.InputSource)
 	}
 }
 

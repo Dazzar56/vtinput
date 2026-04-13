@@ -12,11 +12,12 @@ import (
 
 func NewReader(in io.Reader) *Reader {
 	r := &Reader{
-		in:       in,
-		buf:      make([]byte, 0, 128),
-		dataChan: make(chan byte, 1024),
-		errChan:  make(chan error, 1),
-		done:     make(chan struct{}),
+		in:              in,
+		buf:             make([]byte, 0, 128),
+		dataChan:        make(chan byte, 1024),
+		NativeEventChan: make(chan *InputEvent, 1024),
+		errChan:         make(chan error, 1),
+		done:            make(chan struct{}),
 	}
 
 	if err := syscall.Pipe(r.stopPipe[:]); err != nil {

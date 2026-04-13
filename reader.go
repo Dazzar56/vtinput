@@ -12,6 +12,7 @@ type Reader struct {
 	in                     io.Reader
 	buf                    []byte
 	dataChan               chan byte
+	NativeEventChan        chan *InputEvent
 	errChan                chan error
 	done                   chan struct{}
 	stopPipe               [2]int // Used on Unix for Select unblocking
@@ -49,6 +50,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 		case <-timer:
 			Log("Reader: Timeout (%.2fms) reached, no event.", float64(timeout)/float64(time.Millisecond))
 			return nil, nil // Timeout
+		case ev := <-r.NativeEventChan:
+			Log("Reader: Returning native event: %s", ev.String())
+			return ev, nil
 		default:
 		}
 
@@ -56,6 +60,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 	greedy:
 		for {
 			select {
+			case ev := <-r.NativeEventChan:
+				Log("Reader: Returning native event: %s", ev.String())
+				return ev, nil
 			case b := <-r.dataChan:
 				r.buf = append(r.buf, b)
 			default:
@@ -182,7 +189,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				if len(r.buf) >= 2 && r.buf[1] == 0x1B {
 					Log("Reader: Parsed Double ESC.")
 					r.buf = r.buf[2:]
-					return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_ESCAPE, KeyDown: true}, nil
+					return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_ESCAPE, KeyDown: true, InputSource: "legacy_esc"}, nil
 				}
 
 				// 9. Legacy Alt (ESC + Char)
@@ -191,17 +198,29 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					r.buf = r.buf[1:]
 					character, size := utf8.DecodeRune(r.buf)
 					r.buf = r.buf[size:]
+
+					// Translate hidden Ctrl modifiers inside ASCII control characters (e.g. \x01 for Ctrl+A)
+					if legacyEvt := translateLegacyByte(character); legacyEvt != nil {
+						legacyEvt.ControlKeyState |= LeftAltPressed
+						legacyEvt.InputSource = "legacy_alt_ctrl"
+						return legacyEvt, nil
+					}
+
 					return &InputEvent{
 						Type:            KeyEventType,
 						Char:            character,
 						ControlKeyState: LeftAltPressed,
 						KeyDown:         true,
 						IsLegacy:        true,
+						InputSource:     "legacy_alt",
 					}, nil
 				}
 
 			waitForMore:
 				select {
+				case ev := <-r.NativeEventChan:
+					Log("Reader: Returning native event: %s", ev.String())
+					return ev, nil
 				case b := <-r.dataChan:
 					r.buf = append(r.buf, b)
 					continue
@@ -232,7 +251,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			// Handle standalone BACK (0x7F)
 			if r.buf[0] == 0x7F {
 				r.buf = r.buf[1:]
-				return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_BACK, KeyDown: true, IsLegacy: true}, nil
+				return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_BACK, KeyDown: true, IsLegacy: true, InputSource: "legacy_char"}, nil
 			}
 
 			// Handle regular UTF-8 characters
@@ -249,13 +268,17 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 
 				r.buf = r.buf[consumed:]
 				if event := translateLegacyByte(character); event != nil {
+					event.InputSource = "legacy_ctrl"
 					return event, nil
 				}
-				return &InputEvent{Type: KeyEventType, Char: character, KeyDown: true, IsLegacy: true}, nil
+				return &InputEvent{Type: KeyEventType, Char: character, KeyDown: true, IsLegacy: true, InputSource: "legacy_char"}, nil
 			}
 		}
 
 		select {
+		case ev := <-r.NativeEventChan:
+			Log("Reader: Returning native event: %s", ev.String())
+			return ev, nil
 		case b := <-r.dataChan:
 			r.buf = append(r.buf, b)
 		case err := <-r.errChan:
