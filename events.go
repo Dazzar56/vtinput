@@ -1,18 +1,24 @@
 package vtinput
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ControlKeyState flags (dwControlKeyState)
+type ControlKeyState uint32
+
 const (
-	RightAltPressed  = 0x0001
-	LeftAltPressed   = 0x0002
-	RightCtrlPressed = 0x0004
-	LeftCtrlPressed  = 0x0008
-	ShiftPressed     = 0x0010
-	NumLockOn        = 0x0020
-	ScrollLockOn     = 0x0040
-	CapsLockOn       = 0x0080
-	EnhancedKey      = 0x0100
+	NoKeyPressed     ControlKeyState = 0x0000
+	RightAltPressed  ControlKeyState = 0x0001
+	LeftAltPressed   ControlKeyState = 0x0002
+	RightCtrlPressed ControlKeyState = 0x0004
+	LeftCtrlPressed  ControlKeyState = 0x0008
+	ShiftPressed     ControlKeyState = 0x0010
+	NumLockOn        ControlKeyState = 0x0020
+	ScrollLockOn     ControlKeyState = 0x0040
+	CapsLockOn       ControlKeyState = 0x0080
+	EnhancedKey      ControlKeyState = 0x0100
 )
 
 // Mouse Button States (dwButtonState)
@@ -77,7 +83,7 @@ type InputEvent struct {
 	Far2lData    []byte
 
 	// Shared
-	ControlKeyState uint32
+	ControlKeyState ControlKeyState
 
 	// InputSource tracks which parser generated this event (e.g., "win32", "kitty", "legacy_csi").
 	// Extremely useful for debugging terminal compatibilities.
@@ -87,6 +93,32 @@ type InputEvent struct {
 	// explicit KeyUp events (e.g. standard ANSI). The application may need to
 	// simulate KeyUp after a timeout.
 	IsLegacy bool
+}
+
+// String ensures that ControlKeyState satisfies the fmt.Stringer interface.
+func (cks ControlKeyState) String() string {
+	controlKeys := strings.Builder{}
+
+	if cks == NoKeyPressed {
+		controlKeys.WriteString("None")
+	} else {
+		if cks.Contains(RightAltPressed)  {controlKeys.WriteString("RightAlt,")}
+		if cks.Contains(LeftAltPressed)   {controlKeys.WriteString("Alt,")}
+		if cks.Contains(RightCtrlPressed) {controlKeys.WriteString("RightCtrl,")}
+		if cks.Contains(LeftCtrlPressed)  {controlKeys.WriteString("Ctrl,")}
+		if cks.Contains(ShiftPressed)     {controlKeys.WriteString("Shift,")}
+		if cks.Contains(NumLockOn)        {controlKeys.WriteString("NumLock,")}
+		if cks.Contains(ScrollLockOn)     {controlKeys.WriteString("ScrollLock,")}
+		if cks.Contains(CapsLockOn)       {controlKeys.WriteString("CapsLock,")}
+		if cks.Contains(EnhancedKey)      {controlKeys.WriteString("Enhanced,")}
+	}
+
+	return strings.TrimRight(controlKeys.String(), ",")
+}
+
+// Contains is little helper for Control State check
+func (cks ControlKeyState) Contains(state ControlKeyState) bool {
+	return cks&state != 0
 }
 
 // String implements the Stringer interface for easy debugging.
@@ -119,8 +151,8 @@ func (e InputEvent) String() string {
 			}
 		}
 
-		return fmt.Sprintf("Key{VK:0x%X Scan:0x%X%s%s %s Mods:0x%X Src:%s}%s",
-			e.VirtualKeyCode, e.VirtualScanCode, charStr, baseStr, state, e.ControlKeyState, e.InputSource, legacyStr)
+		return fmt.Sprintf("Key{VK:0x%X Scan:0x%X%s%s %s Mods:%s Src:%s}%s",
+			e.VirtualKeyCode, e.VirtualScanCode, charStr, baseStr, state, e.ControlKeyState.String(), e.InputSource, legacyStr)
 	}
 
 	if e.Type == MouseEventType {
@@ -150,8 +182,8 @@ func (e InputEvent) String() string {
 			wheel = " WHEEL_DOWN"
 		}
 
-		return fmt.Sprintf("Mouse{Pos:%d,%d Btn:%s %s%s Mods:0x%X Src:%s}%s",
-			e.MouseX, e.MouseY, btn, action, wheel, e.ControlKeyState, e.InputSource, legacyStr)
+		return fmt.Sprintf("Mouse{Pos:%d,%d Btn:%s %s%s Mods:%s Src:%s}%s",
+			e.MouseX, e.MouseY, btn, action, wheel, e.ControlKeyState.String(), e.InputSource, legacyStr)
 	}
 
 	if e.Type == FocusEventType {

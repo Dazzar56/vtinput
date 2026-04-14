@@ -22,8 +22,8 @@ var (
 	mu          sync.Mutex
 	pressedKeys = make(map[uint16]activeKey)
 	logLines    []string
-	logLimit    = 10
-	currentMods uint32
+	logLimit    = 20
+	currentMods vtinput.ControlKeyState
 )
 
 const (
@@ -133,27 +133,28 @@ func handleEvent(e *vtinput.InputEvent) {
 	// and ignore the event's lock bits for these keys to prevent visual sticking.
 	if e.Type == vtinput.KeyEventType && (e.VirtualKeyCode == vtinput.VK_CAPITAL || e.VirtualKeyCode == vtinput.VK_NUMLOCK || e.VirtualKeyCode == vtinput.VK_SCROLL) {
 		if e.KeyDown {
-			if e.VirtualKeyCode == vtinput.VK_CAPITAL {
-				if (e.ControlKeyState & vtinput.CapsLockOn) == 0 {
+			switch e.VirtualKeyCode {
+			case vtinput.VK_CAPITAL:
+				if e.ControlKeyState.Contains(vtinput.CapsLockOn) {
+					currentMods &= ^vtinput.CapsLockOn
+				} else {
 					currentMods |= vtinput.CapsLockOn
-				} else {
-					currentMods &= ^uint32(vtinput.CapsLockOn)
 				}
-			} else if e.VirtualKeyCode == vtinput.VK_NUMLOCK {
-				if (e.ControlKeyState & vtinput.NumLockOn) == 0 {
+			case vtinput.VK_NUMLOCK:
+				if e.ControlKeyState.Contains(vtinput.NumLockOn) {
+					currentMods &= ^vtinput.NumLockOn
+				} else {
 					currentMods |= vtinput.NumLockOn
-				} else {
-					currentMods &= ^uint32(vtinput.NumLockOn)
 				}
-			} else if e.VirtualKeyCode == vtinput.VK_SCROLL {
-				if (e.ControlKeyState & vtinput.ScrollLockOn) == 0 {
-					currentMods |= vtinput.ScrollLockOn
+			case vtinput.VK_SCROLL:
+				if e.ControlKeyState.Contains(vtinput.ScrollLockOn) {
+					currentMods &= ^vtinput.ScrollLockOn
 				} else {
-					currentMods &= ^uint32(vtinput.ScrollLockOn)
+					currentMods |= vtinput.ScrollLockOn
 				}
 			}
 		}
-		lockMask := uint32(vtinput.CapsLockOn | vtinput.NumLockOn | vtinput.ScrollLockOn)
+		lockMask := vtinput.ControlKeyState(vtinput.CapsLockOn | vtinput.NumLockOn | vtinput.ScrollLockOn)
 		currentMods = (currentMods & lockMask) | (e.ControlKeyState & ^lockMask)
 	} else {
 		currentMods = e.ControlKeyState
@@ -170,9 +171,10 @@ func handleEvent(e *vtinput.InputEvent) {
 		vk := e.VirtualKeyCode
 		// Disambiguate Shift keys based on ScanCode (common in Win32/Kitty)
 		if vk == vtinput.VK_SHIFT {
-			if e.VirtualScanCode == vtinput.ScanCodeLeftShift {
+			switch e.VirtualScanCode {
+			case vtinput.ScanCodeLeftShift:
 				vk = vtinput.VK_LSHIFT
-			} else if e.VirtualScanCode == vtinput.ScanCodeRightShift {
+			case vtinput.ScanCodeRightShift:
 				vk = vtinput.VK_RSHIFT
 			}
 		}
@@ -230,20 +232,20 @@ func drawUI() {
 			}
 
 			// Check modifiers from global state
-			if vk == vtinput.VK_LCONTROL && (currentMods&vtinput.LeftCtrlPressed) != 0 { isPressed = true }
-			if vk == vtinput.VK_RCONTROL && (currentMods&vtinput.RightCtrlPressed) != 0 { isPressed = true }
-			if vk == vtinput.VK_LMENU && (currentMods&vtinput.LeftAltPressed) != 0 { isPressed = true }
-			if vk == vtinput.VK_RMENU && (currentMods&vtinput.RightAltPressed) != 0 { isPressed = true }
+			if vk == vtinput.VK_LCONTROL && currentMods.Contains(vtinput.LeftCtrlPressed)  { isPressed = true }
+			if vk == vtinput.VK_RCONTROL && currentMods.Contains(vtinput.RightCtrlPressed) { isPressed = true }
+			if vk == vtinput.VK_LMENU && currentMods.Contains(vtinput.LeftAltPressed)      { isPressed = true }
+			if vk == vtinput.VK_RMENU && currentMods.Contains(vtinput.RightAltPressed)     { isPressed = true }
 
 			// For Shift, only use generic modifier if no specific shift key is detected in pressedKeys.
 			// This allows distinguishing LShift/RShift in modern protocols, while keeping support for legacy.
 			if !shiftInMap {
-				if vk == vtinput.VK_LSHIFT && (currentMods&vtinput.ShiftPressed) != 0 { isPressed = true }
-				if vk == vtinput.VK_RSHIFT && (currentMods&vtinput.ShiftPressed) != 0 { isPressed = true }
+				if vk == vtinput.VK_LSHIFT && currentMods.Contains(vtinput.ShiftPressed) { isPressed = true }
+				if vk == vtinput.VK_RSHIFT && currentMods.Contains(vtinput.ShiftPressed) { isPressed = true }
 			}
 
-			if vk == vtinput.VK_CAPITAL && (currentMods&vtinput.CapsLockOn) != 0 { isPressed = true }
-			if vk == vtinput.VK_NUMLOCK && (currentMods&vtinput.NumLockOn) != 0 { isPressed = true }
+			if vk == vtinput.VK_CAPITAL && currentMods.Contains(vtinput.CapsLockOn) { isPressed = true }
+			if vk == vtinput.VK_NUMLOCK && currentMods.Contains(vtinput.NumLockOn)  { isPressed = true }
 
 			if isPressed {
 				// Green background for pressed keys
