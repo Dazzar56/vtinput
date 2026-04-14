@@ -217,7 +217,7 @@ func TestParseLegacyCSI(t *testing.T) {
 		name     string
 		data     []byte
 		expected uint16
-		mods     uint32
+		mods     ControlKeyState
 	}{
 		{"Up Arrow", []byte("\x1b[A"), VK_UP, 0},
 		{"Ctrl+Up", []byte("\x1b[1;5A"), VK_UP, LeftCtrlPressed},
@@ -313,7 +313,7 @@ func TestDecodeAnsiModifiers_FullFlags(t *testing.T) {
 
 	tests := []struct {
 		code int
-		want uint32
+		want ControlKeyState
 	}{
 		{1, 0},
 		{2, ShiftPressed},
@@ -783,7 +783,7 @@ func TestReadEvent_ArkanoidFix(t *testing.T) {
 		t.Errorf("Expected VK_A (0x41), got 0x%X", e.VirtualKeyCode)
 	}
 	// Should have both Ctrl and Alt bits
-	expectedMods := uint32(LeftCtrlPressed | LeftAltPressed)
+	expectedMods := ControlKeyState(LeftCtrlPressed | LeftAltPressed)
 	if e.ControlKeyState != expectedMods {
 		t.Errorf("Expected mods 0x%X, got 0x%X", expectedMods, e.ControlKeyState)
 	}

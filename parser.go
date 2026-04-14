@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-	"encoding/base64"
+	"github.com/emmansun/base64"
 )
 
 var (
@@ -40,11 +40,11 @@ func scanCSI(data []byte) (terminatorIdx int, command byte, err error) {
 }
 // decodeAnsiModifiers converts TUI modifier codes (1 + bitmask) to vtinput flags.
 // Supported by Kitty and modern Legacy CSI.
-func decodeAnsiModifiers(modCode int) uint32 {
+func decodeAnsiModifiers(modCode int) ControlKeyState {
 	if modCode <= 1 {
 		return 0
 	}
-	actual := uint32(0)
+	actual := ControlKeyState(0)
 	bits := modCode - 1
 	if (bits & 0x01) != 0 { actual |= ShiftPressed }
 	if (bits & 0x02) != 0 { actual |= LeftAltPressed }
@@ -138,11 +138,12 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 		if content == "" {
 			return nil, terminatorIdx + 1, nil
 		}
-		if content == "1" {
+		switch content {
+		case "1":
 			return &InputEvent{Type: Far2lEventType, Far2lCommand: "enable"}, terminatorIdx + 1, nil
-		} else if content == "0" {
+		case "0":
 			return &InputEvent{Type: Far2lEventType, Far2lCommand: "disable"}, terminatorIdx + 1, nil
-		} else if content == "ok" {
+		case "ok":
 			return &InputEvent{Type: Far2lEventType, Far2lCommand: "ok"}, terminatorIdx + 1, nil
 		}
 
@@ -173,7 +174,7 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 			case 'K', 'k':
 				event.Type = KeyEventType
 				event.Char = rune(stk.PopU32())
-				event.ControlKeyState = stk.PopU32()
+				event.ControlKeyState = ControlKeyState(stk.PopU32())
 				event.VirtualScanCode = stk.PopU16()
 				event.VirtualKeyCode = stk.PopU16()
 				event.RepeatCount = stk.PopU16()
@@ -181,14 +182,14 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 			case 'C', 'c':
 				event.Type = KeyEventType
 				event.Char = rune(stk.PopU16())
-				event.ControlKeyState = uint32(stk.PopU16())
+				event.ControlKeyState = ControlKeyState(stk.PopU16())
 				event.VirtualKeyCode = uint16(stk.PopU8())
 				event.RepeatCount = 1
 				event.KeyDown = (cmd == 'C')
 			case 'M':
 				event.Type = MouseEventType
 				event.MouseEventFlags = stk.PopU32()
-				event.ControlKeyState = stk.PopU32()
+				event.ControlKeyState = ControlKeyState(stk.PopU32())
 				event.ButtonState = stk.PopU32()
 				event.MouseY = stk.PopU16()
 				event.MouseX = stk.PopU16()
@@ -204,7 +205,7 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 			case 'm':
 				event.Type = MouseEventType
 				event.MouseEventFlags = uint32(stk.PopU8())
-				event.ControlKeyState = uint32(stk.PopU8())
+				event.ControlKeyState = ControlKeyState(stk.PopU8())
 				encBtn := stk.PopU16()
 				event.ButtonState = uint32(encBtn&0xFF) | uint32((encBtn&0xFF00)<<8)
 				event.MouseY = stk.PopU16()
@@ -265,7 +266,7 @@ func ParseWin32InputEvent(data []byte) (*InputEvent, int, error) {
 	if len(params) > 3 {
 		if parseUint(params[3]) == 1 { event.KeyDown = true }
 	}
-	if len(params) > 4 { event.ControlKeyState = parseUint(params[4]) }
+	if len(params) > 4 { event.ControlKeyState = ControlKeyState(parseUint(params[4])) }
 	if len(params) > 5 {
 		rc := parseUint(params[5])
 		if rc > 0 { event.RepeatCount = uint16(rc) }
@@ -408,15 +409,28 @@ func ParseMouseSGR(data []byte) (*InputEvent, int, error) {
 		InputSource: "sgr_mouse",
 	}
 
+		// mouse bit shifts
+	const (
+		bitShift  = 0b0000_0100
+		bitAlt    = 0b0000_1000
+		bitCtrl   = 0b0001_0000
+		bitMotion = 0b0010_0000
+		bitWheel  = 0b0100_0000
+		bitAdd    = 0b1000_0000 // additional buttons 8-11
+
+		bitsMask = 0b0000_0011
+	)
+
 	// Decode Pb bits:
 	// 0-1: button (0=Left, 1=Middle, 2=Right, 3=Release/None)
 	// 5: motion, 6: wheel
 	buttonPart := pb & 0x03
 	if (pb & 64) != 0 {
 		// Mouse Wheel
-		if buttonPart == 0 {
+		switch buttonPart {
+		case 0:
 			event.WheelDirection = 1 // Up
-		} else if buttonPart == 1 {
+		case 1:
 			event.WheelDirection = -1 // Down
 		}
 	} else {
@@ -612,7 +626,7 @@ func ParseKitty(data []byte) (*InputEvent, int, error) {
 		if eventType != 3 {
 			event.ControlKeyState |= RightCtrlPressed | EnhancedKey
 			// Generic modifiers logic defaults to LeftCtrl; clear it since we know it's Right.
-			event.ControlKeyState &= ^uint32(LeftCtrlPressed)
+			event.ControlKeyState &= ^ControlKeyState(LeftCtrlPressed)
 		}
 	case 57442: // Left Ctrl
 		event.VirtualKeyCode = VK_CONTROL
@@ -625,7 +639,7 @@ func ParseKitty(data []byte) (*InputEvent, int, error) {
 		if eventType != 3 {
 			event.ControlKeyState |= RightAltPressed | EnhancedKey
 			// Generic modifiers logic defaults to LeftAlt; clear it since we know it's Right.
-			event.ControlKeyState &= ^uint32(LeftAltPressed)
+			event.ControlKeyState &= ^ControlKeyState(LeftAltPressed)
 		}
 	case 57441: // Left Shift
 		event.VirtualKeyCode = VK_SHIFT
