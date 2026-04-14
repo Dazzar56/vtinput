@@ -11,7 +11,7 @@ import (
 type Reader struct {
 	in                     io.Reader
 	buf                    []byte
-	dataChan               chan byte
+	dataChan               chan []byte
 	NativeEventChan        chan *InputEvent
 	errChan                chan error
 	done                   chan struct{}
@@ -64,7 +64,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				Log("Reader: Returning native event: %s", ev.String())
 				return ev, nil
 			case b := <-r.dataChan:
-				r.buf = append(r.buf, b)
+				r.buf = append(r.buf, b...)
 			default:
 				break greedy
 			}
@@ -222,7 +222,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					Log("Reader: Returning native event: %s", ev.String())
 					return ev, nil
 				case b := <-r.dataChan:
-					r.buf = append(r.buf, b)
+					r.buf = append(r.buf, b...)
 					continue
 				case <-time.After(100 * time.Millisecond):
 					Log("Reader: ESC timeout (100ms) for ambiguous sequence. Returning ESC key.")
@@ -235,7 +235,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					for {
 						select {
 						case b := <-r.dataChan:
-							r.buf = append(r.buf, b)
+							r.buf = append(r.buf, b...)
 						default:
 							break drain1
 						}
@@ -280,7 +280,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			Log("Reader: Returning native event: %s", ev.String())
 			return ev, nil
 		case b := <-r.dataChan:
-			r.buf = append(r.buf, b)
+			r.buf = append(r.buf, b...)
 		case err := <-r.errChan:
 			Log("Reader: Error in dataChan (drain2): %v", err)
 			// Prioritize data over error to avoid premature EOF
@@ -288,7 +288,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			for {
 				select {
 				case b := <-r.dataChan:
-					r.buf = append(r.buf, b)
+					r.buf = append(r.buf, b...)
 				default:
 					break drain2
 				}

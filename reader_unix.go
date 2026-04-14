@@ -14,8 +14,8 @@ func NewReader(in io.Reader) *Reader {
 	r := &Reader{
 		in:              in,
 		buf:             make([]byte, 0, 128),
-		dataChan:        make(chan byte, 1024),
-		NativeEventChan: make(chan *InputEvent, 1024),
+		dataChan:        make(chan []byte, 16),
+		NativeEventChan: nil, //таких эвентов на линуксе нет, так что память не тратим
 		errChan:         make(chan error, 1),
 		done:            make(chan struct{}),
 	}
@@ -56,11 +56,12 @@ func NewReader(in io.Reader) *Reader {
 
 				n, err := syscall.Read(fd, tmp)
 				if n > 0 {
-					for i := 0; i < n; i++ { r.dataChan <- tmp[i] }
+					buf := make([]byte, n)
+					copy(buf, tmp[:n])
+					r.dataChan <- buf
 				}
-				if n > 0 {
-					//Log("Reader(syscall): Read %d bytes: %v", n, tmp[:n])
-				} else if err != nil {
+
+				if err != nil {
 					Log("Reader(syscall): Read error: %v", err)
 				}
 				if err != nil {
@@ -80,7 +81,9 @@ func NewReader(in io.Reader) *Reader {
 				default:
 					n, err := in.Read(tmp)
 					if n > 0 {
-						for i := 0; i < n; i++ { r.dataChan <- tmp[i] }
+						buf := make([]byte, n)
+						copy(buf, tmp[:n])
+						r.dataChan <- buf
 					}
 					if err != nil {
 						r.errChan <- err

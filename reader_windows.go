@@ -24,7 +24,7 @@ func NewReader(in io.Reader) *Reader {
 	r := &Reader{
 		in:              in,
 		buf:             make([]byte, 0, 128),
-		dataChan:        make(chan byte, 1024),
+		dataChan:        make(chan []byte, 16),
 		NativeEventChan: make(chan *InputEvent, 1024),
 		errChan:         make(chan error, 1),
 		done:            make(chan struct{}),
@@ -72,9 +72,9 @@ func (r *Reader) ansiLoop() {
 		default:
 			n, err := r.in.Read(tmp)
 			if n > 0 {
-				for i := 0; i < n; i++ {
-					r.dataChan <- tmp[i]
-				}
+				buf := make([]byte, n)
+				copy(buf, tmp[:n])
+				r.dataChan <- buf
 			}
 			if err != nil {
 				r.errChan <- err
