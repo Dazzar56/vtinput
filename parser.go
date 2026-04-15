@@ -327,6 +327,7 @@ func ParseLegacyCSI(data []byte) (*InputEvent, int, error) {
 }
 // ParseLegacySS3 handles standard SS3 sequences (ESC O ...).
 // These are common for F1-F4 and Home/End on some terminals.
+// Supports both simple (ESC O P) and modified (ESC O 3 P) formats.
 func ParseLegacySS3(data []byte) (*InputEvent, int, error) {
 	if len(data) < 2 {
 		return nil, 0, ErrIncomplete
@@ -338,14 +339,26 @@ func ParseLegacySS3(data []byte) (*InputEvent, int, error) {
 		return nil, 0, ErrIncomplete
 	}
 
-	event := &InputEvent{
-		Type:        KeyEventType,
-		KeyDown:     true,
-		IsLegacy:    true,
-		InputSource: "legacy_ss3",
+	i := 2
+	mod := 1
+	// Check for optional modifier digit (e.g. \x1bO3P where 3 is Alt)
+	if data[i] >= '0' && data[i] <= '9' {
+		mod = int(data[i] - '0')
+		i++
+		if len(data) <= i {
+			return nil, 0, ErrIncomplete
+		}
 	}
 
-	switch data[2] {
+	event := &InputEvent{
+		Type:            KeyEventType,
+		KeyDown:         true,
+		IsLegacy:        true,
+		InputSource:     "legacy_ss3",
+		ControlKeyState: decodeAnsiModifiers(mod),
+	}
+
+	switch data[i] {
 	case 'P': event.VirtualKeyCode = VK_F1
 	case 'Q': event.VirtualKeyCode = VK_F2
 	case 'R': event.VirtualKeyCode = VK_F3
@@ -356,7 +369,7 @@ func ParseLegacySS3(data []byte) (*InputEvent, int, error) {
 		return nil, 0, ErrInvalidSequence
 	}
 
-	return event, 3, nil
+	return event, i + 1, nil
 }
 // ParseDSRReply parses Device Status Report replies (ESC [ <params> n).
 // These are not input events for the application, but must be consumed to keep the buffer clean.

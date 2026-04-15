@@ -331,10 +331,21 @@ func TestDecodeAnsiModifiers_FullFlags(t *testing.T) {
 }
 
 func TestParseLegacySS3(t *testing.T) {
+	// 1. Simple F3
 	data := []byte("\x1bOR")
 	event, consumed, err := ParseLegacySS3(data)
 	if err != nil || consumed != 3 || event.VirtualKeyCode != VK_F3 {
-		t.Errorf("failed to parse SS3: got %+v, err %v", event, err)
+		t.Errorf("failed to parse simple SS3: got %+v, err %v", event, err)
+	}
+
+	// 2. Alt+F1 (Konsole style: ESC O 3 P)
+	dataAlt := []byte("\x1bO3P")
+	event, consumed, err = ParseLegacySS3(dataAlt)
+	if err != nil || consumed != 4 {
+		t.Fatalf("failed to parse modified SS3: err %v, consumed %d", err, consumed)
+	}
+	if event.VirtualKeyCode != VK_F1 || (event.ControlKeyState&LeftAltPressed) == 0 {
+		t.Errorf("wrong event data for Alt+F1 SS3: %+v", event)
 	}
 }
 
