@@ -292,6 +292,10 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 
 		select {
 		case ev := <-r.NativeEventChan:
+			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
+				r.buf = append(r.buf, byte(ev.Char))
+				continue
+			}
 			Log("Reader: Returning native event: %s", ev.String())
 			return ev, nil
 		case b := <-r.dataChan:
