@@ -51,6 +51,13 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			Log("Reader: Timeout (%.2fms) reached, no event.", float64(timeout)/float64(time.Millisecond))
 			return nil, nil // Timeout
 		case ev := <-r.NativeEventChan:
+			// Windows ConPTY workaround: if a key event has no VirtualKeyCode,
+			// it is likely a pulverized ANSI escape sequence byte.
+			// Divert it back to r.buf so byte-level parsers can reassemble it.
+			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
+				r.buf = append(r.buf, byte(ev.Char))
+				continue
+			}
 			Log("Reader: Returning native event: %s", ev.String())
 			return ev, nil
 		default:
@@ -61,6 +68,10 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 		for {
 			select {
 			case ev := <-r.NativeEventChan:
+				if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
+					r.buf = append(r.buf, byte(ev.Char))
+					break greedy
+				}
 				Log("Reader: Returning native event: %s", ev.String())
 				return ev, nil
 			case b := <-r.dataChan:
@@ -219,6 +230,10 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			waitForMore:
 				select {
 				case ev := <-r.NativeEventChan:
+					if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
+						r.buf = append(r.buf, byte(ev.Char))
+						continue
+					}
 					Log("Reader: Returning native event: %s", ev.String())
 					return ev, nil
 				case b := <-r.dataChan:
