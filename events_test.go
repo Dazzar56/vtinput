@@ -16,7 +16,7 @@ func TestInputEvent_String(t *testing.T) {
 		InputSource:    "test_kb",
 	}
 	strKey := eKey.String()
-	if !strings.Contains(strKey, "Key{VK:0x41") || !strings.Contains(strKey, "Char:'a'") || !strings.Contains(strKey, "Src:test_kb") || !strings.Contains(strKey, "[Legacy]") {
+	if !strings.Contains(strKey, "Key{VK:VK_A") || !strings.Contains(strKey, "Char:'a'") || !strings.Contains(strKey, "Src:test_kb") || !strings.Contains(strKey, "[Legacy]") {
 		t.Errorf("Unexpected string output for KeyEvent: %s", strKey)
 	}
 

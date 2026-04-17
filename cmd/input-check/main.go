@@ -220,10 +220,7 @@ func drawUI() {
 				continue
 			}
 
-			name, ok := vkNames[vk]
-			if !ok {
-				name = fmt.Sprintf("0x%X", vk)
-			}
+			name := vtinput.VKString(vk)
 
 			// Check if pressed directly
 			isPressed := false

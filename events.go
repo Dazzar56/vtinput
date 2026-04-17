@@ -151,8 +151,8 @@ func (e InputEvent) String() string {
 			}
 		}
 
-		return fmt.Sprintf("Key{VK:0x%X Scan:0x%X%s%s %s Mods:%s Src:%s}%s",
-			e.VirtualKeyCode, e.VirtualScanCode, charStr, baseStr, state, e.ControlKeyState.String(), e.InputSource, legacyStr)
+		return fmt.Sprintf("Key{VK:%s Scan:0x%X%s%s %s Mods:%s Src:%s}%s",
+			VKString(e.VirtualKeyCode), e.VirtualScanCode, charStr, baseStr, state, e.ControlKeyState.String(), e.InputSource, legacyStr)
 	}
 
 	if e.Type == MouseEventType {
