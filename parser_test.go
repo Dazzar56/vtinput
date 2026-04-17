@@ -803,3 +803,35 @@ func TestReadEvent_ArkanoidFix(t *testing.T) {
 	}
 }
 
+func TestReadEvent_Win32PulverizedSequence(t *testing.T) {
+	// Симулируем ситуацию, когда ConPTY в Windows разбивает ответ терминала \x1b[0n 
+	// на отдельные события нажатия клавиш без VK кода.
+	r := NewReader(bytes.NewReader(nil))
+	// На Windows NewReader создает NativeEventChan. Если мы на другой ОС, 
+	// нам нужно создать его вручную для теста.
+	if r.NativeEventChan == nil {
+		r.NativeEventChan = make(chan *InputEvent, 10)
+	}
+
+	// Отправляем последовательность по одному символу
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 0x1B}
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '['}
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '0'}
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 'n'}
+
+	// Добавляем реальную клавишу в конце, чтобы ReadEvent не заблокировался навсегда
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_A, Char: 'a', KeyDown: true}
+
+	// ReadEvent должен "проглотить" [0n и вернуть сразу 'a'
+	evt, err := r.ReadEventTimeout(500 * time.Millisecond)
+	if err != nil {
+		t.Fatalf("ReadEvent error: %v", err)
+	}
+	if evt == nil {
+		t.Fatal("ReadEvent timed out - pulverized sequence was not consumed")
+	}
+
+	if evt.VirtualKeyCode != VK_A {
+		t.Errorf("Pulverized sequence leaked! Expected VK_A, got %s", evt.String())
+	}
+}
