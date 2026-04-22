@@ -302,6 +302,7 @@ func ParseLegacyCSI(data []byte) (*InputEvent, int, error) {
 		ControlKeyState: decodeAnsiModifiers(getParam(1, 1)),
 		IsLegacy:        true,
 		InputSource:     "legacy_csi",
+		RepeatCount:     1,
 	}
 
 	if command == '~' {
@@ -356,6 +357,7 @@ func ParseLegacySS3(data []byte) (*InputEvent, int, error) {
 		IsLegacy:        true,
 		InputSource:     "legacy_ss3",
 		ControlKeyState: decodeAnsiModifiers(mod),
+		RepeatCount:     1,
 	}
 
 	switch data[i] {

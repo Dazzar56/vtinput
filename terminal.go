@@ -1,6 +1,7 @@
 package vtinput
 
 import (
+	"runtime"
 	"os"
 	"time"
 
@@ -83,12 +84,35 @@ func EnableProtocols(p Protocol) (func(), error) {
 		disableSeq = seqDisableFar2l + disableSeq
 	}
 
-	// If we are using WinAPI for input, we MUST NOT enable ANSI input protocols
-	// like Kitty or Win32InputMode, as they may cause the console host to
-	// suppress the raw KEY_EVENT_RECORDs we need.
-	if InputMode == "winapi" {
-		Log("VTINPUT: WinAPI mode active, suppressing ANSI input protocol sequences.")
+	// On Windows, if we are using the native ConPTY/WinAPI reader,
+	// we MUST NOT enable ANSI keyboard protocols (Kitty/Win32).
+	// If we do, the host terminal will send ESC sequences that ConPTY will
+	// "pulverize" into VK:0 events, causing double input when reassembled.
+	isWindowsNative := runtime.GOOS == "windows" && (InputMode == "" || InputMode == "ConPTY")
+	if InputMode == "winapi" || isWindowsNative {
+		Log("VTINPUT: Windows Native mode detected, suppressing ANSI keyboard protocols to prevent duplication.")
+		// We only enable Mouse, Focus and Far2l protocols.
+		enableSeq = ""
+		disableSeq = ""
+		if p&MouseSupport != 0 {
+			enableSeq += seqEnableMouse
+			disableSeq = seqDisableMouse + disableSeq
+		}
+		if p&FocusAndPaste != 0 {
+			enableSeq += seqEnableExt
+			disableSeq = seqDisableExt + disableSeq
+		}
+		if p&Far2lExtensions != 0 {
+			enableSeq += seqEnableFar2l + "\x1b[5n"
+			disableSeq = seqDisableFar2l + disableSeq
+		}
+
+		if _, err := os.Stdout.WriteString(enableSeq); err != nil {
+			term.Restore(fd, oldState)
+			return nil, err
+		}
 		return func() {
+			os.Stdout.WriteString(disableSeq)
 			term.Restore(fd, oldState)
 		}, nil
 	}

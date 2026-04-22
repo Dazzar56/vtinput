@@ -258,11 +258,11 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					continue
 				}
 			}
-
+			
 			// Handle standalone BACK (0x7F)
 			if r.buf[0] == 0x7F {
 				r.buf = r.buf[1:]
-				return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_BACK, KeyDown: true, IsLegacy: true, InputSource: "legacy_char"}, nil
+				return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_BACK, KeyDown: true, IsLegacy: true, InputSource: "legacy_char", RepeatCount: 1}, nil
 			}
 
 			// Handle regular UTF-8 characters
@@ -282,9 +282,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					event.InputSource = "legacy_ctrl"
 					return event, nil
 				}
-				return &InputEvent{Type: KeyEventType, Char: character, KeyDown: true, IsLegacy: true, InputSource: "legacy_char"}, nil
+				return &InputEvent{Type: KeyEventType, Char: character, KeyDown: true, IsLegacy: true, InputSource: "legacy_char", RepeatCount: 1}, nil
 			}
-		}
+		}	
 
 		select {
 		case ev := <-r.NativeEventChan:
@@ -318,7 +318,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 }
 
 func translateLegacyByte(r rune) *InputEvent {
-	evt := &InputEvent{Type: KeyEventType, KeyDown: true, IsLegacy: true}
+	evt := &InputEvent{Type: KeyEventType, KeyDown: true, IsLegacy: true, RepeatCount: 1}
 	switch r {
 	case 0x00:
 		evt.VirtualKeyCode = VK_SPACE
