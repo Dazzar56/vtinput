@@ -141,7 +141,7 @@ func (r *Reader) conPTYLoop(handle windows.Handle) {
 		for i := uint32(0); i < numRead; i++ {
 			rec := records[i]
 			switch rec.EventType {
-			case KeyEventType: // KEY_EVENT
+			case 0x0001: // KEY_EVENT
 				ev := &InputEvent{
 					Type:            KeyEventType,
 					KeyDown:         binary.LittleEndian.Uint32(rec.Event[0:4]) > 0,
@@ -154,7 +154,7 @@ func (r *Reader) conPTYLoop(handle windows.Handle) {
 				}
 				r.NativeEventChan <- ev
 
-			case MouseEventType: // MOUSE_EVENT
+			case 0x0002: // MOUSE_EVENT
 				ev := &InputEvent{
 					Type:            MouseEventType,
 					MouseX:          binary.LittleEndian.Uint16(rec.Event[0:2]),
@@ -175,10 +175,15 @@ func (r *Reader) conPTYLoop(handle windows.Handle) {
 				}
 				r.NativeEventChan <- ev
 
-			case ResizeEventType: // WINDOW_BUFFER_SIZE_EVENT
+			case 0x0004: // WINDOW_BUFFER_SIZE_EVENT
 				r.NativeEventChan <- &InputEvent{Type: ResizeEventType, InputSource: "ConPTY"}
+
+			case 0x0010: // FOCUS_EVENT
+				setFocus := binary.LittleEndian.Uint32(rec.Event[0:4]) > 0
+				r.NativeEventChan <- &InputEvent{Type: FocusEventType, SetFocus: setFocus, InputSource: "ConPTY"}
+
 			default:
-				// Log other events like FOCUS_EVENT (0x10) or MENU_EVENT (0x8)
+				// Log other events like MENU_EVENT (0x0008)
 				Log("Reader: ConPTY ignored event type 0x%04X", rec.EventType)
 			}
 		}

@@ -84,27 +84,22 @@ func EnableProtocols(p Protocol) (func(), error) {
 		disableSeq = seqDisableFar2l + disableSeq
 	}
 
-	// On Windows, if we are using the native ConPTY/WinAPI reader,
-	// we MUST NOT enable ANSI keyboard protocols (Kitty/Win32).
-	// If we do, the host terminal will send ESC sequences that ConPTY will
-	// "pulverize" into VK:0 events, causing double input when reassembled.
+	// On Windows, if we are using the native ConPTY/WinAPI reader (default),
+	// we MUST NOT enable redundant ANSI protocols. WinAPI natively provides 
+	// exact Key, Mouse, and Focus events. Windows also has native clipboard APIs.
+	// If we request ANSI protocols, ConPTY will "pulverize" the resulting ESC 
+	// sequences into VK:0 key events, causing massive duplication and lag.
 	isWindowsNative := runtime.GOOS == "windows" && (InputMode == "" || InputMode == "ConPTY")
 	if InputMode == "winapi" || isWindowsNative {
-		Log("VTINPUT: Windows Native mode detected, suppressing ANSI keyboard protocols to prevent duplication.")
-		// We only enable Mouse, Focus and Far2l protocols.
+		Log("VTINPUT: Windows Native mode detected, suppressing redundant ANSI protocols.")
 		enableSeq = ""
 		disableSeq = ""
-		if p&MouseSupport != 0 {
-			enableSeq += seqEnableMouse
-			disableSeq = seqDisableMouse + disableSeq
-		}
+		
+		// The ONLY exception is Bracketed Paste. WinAPI does not have a PASTE_EVENT.
+		// We must ask the terminal to wrap pastes in \x1b[200~ so our parser can catch them.
 		if p&FocusAndPaste != 0 {
-			enableSeq += seqEnableExt
-			disableSeq = seqDisableExt + disableSeq
-		}
-		if p&Far2lExtensions != 0 {
-			enableSeq += seqEnableFar2l + "\x1b[5n"
-			disableSeq = seqDisableFar2l + disableSeq
+			enableSeq += "\x1b[?2004h"
+			disableSeq = "\x1b[?2004l" + disableSeq
 		}
 
 		if _, err := os.Stdout.WriteString(enableSeq); err != nil {
