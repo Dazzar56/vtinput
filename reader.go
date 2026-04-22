@@ -45,20 +45,16 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 	for {
 		select {
 		case <-r.done:
-			Log("Reader: Done signal received, exiting.")
+			Log("Reader[%p]: Done signal received, exiting.", r)
 			return nil, io.EOF
 		case <-timer:
-			Log("Reader: Timeout (%.2fms) reached, no event.", float64(timeout)/float64(time.Millisecond))
 			return nil, nil // Timeout
 		case ev := <-r.NativeEventChan:
-			// Windows ConPTY workaround: if a key event has no VirtualKeyCode,
-			// it is likely a pulverized ANSI escape sequence byte.
-			// Divert it back to r.buf so byte-level parsers can reassemble it.
 			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
 				r.buf = append(r.buf, byte(ev.Char))
 				continue
 			}
-			Log("Reader: Returning native event: %s", ev.String())
+			Log("Reader[%p]: Returning native event: %s", r, ev.String())
 			return ev, nil
 		default:
 		}

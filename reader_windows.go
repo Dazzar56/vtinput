@@ -30,7 +30,7 @@ func NewReader(in io.Reader) *Reader {
 		done:            make(chan struct{}),
 	}
 
-	Log("Reader: NewReader init, InputMode global setting: %q", InputMode)
+	Log("Reader[%p]: NewReader init (Input: %T), InputMode: %q", r, in, InputMode)
 
 	useConPTY := true // Default on Windows
 	switch InputMode {
@@ -129,8 +129,13 @@ func (r *Reader) conPTYLoop(handle windows.Handle) {
 		}
 
 		if ret == 0 {
+			Log("Reader[%p]: conPTYLoop ReadConsoleInputW Error: %v", r, err)
 			r.errChan <- err
 			return
+		}
+
+		if numRead > 0 {
+			Log("Reader[%p]: conPTYLoop batch: %d events", r, numRead)
 		}
 
 		for i := uint32(0); i < numRead; i++ {
