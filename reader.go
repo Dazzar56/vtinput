@@ -165,20 +165,19 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						var consumed int
 						var pErr error
 
-						// Try modern protocols FIRST (Kitty/Win32)
-						if !r.far2lExtensionsEnabled {
-							if cmd == '_' {
-								event, consumed, pErr = ParseWin32InputEvent(r.buf)
-							} else {
-								event, consumed, pErr = ParseKitty(r.buf)
-							}
-						} else {
-							pErr = ErrInvalidSequence
-						}
+						// Parse Legacy CSI FIRST to match far2l priority
+						event, consumed, pErr = ParseLegacyCSI(r.buf)
 
-						// Fallback to Legacy CSI if modern parsers didn't recognize the format
 						if pErr == ErrInvalidSequence || event == nil {
-							event, consumed, pErr = ParseLegacyCSI(r.buf)
+							if !r.far2lExtensionsEnabled {
+								if cmd == '_' {
+									event, consumed, pErr = ParseWin32InputEvent(r.buf)
+								} else {
+									event, consumed, pErr = ParseKitty(r.buf)
+								}
+							} else {
+								pErr = ErrInvalidSequence // Force skip Win32/Kitty
+							}
 						}
 
 						if pErr == nil && event != nil {
