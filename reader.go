@@ -51,7 +51,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			return nil, nil // Timeout
 		case ev := <-r.NativeEventChan:
 			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
-				r.buf = append(r.buf, byte(ev.Char))
+				if ev.KeyDown {
+					r.buf = append(r.buf, string(ev.Char)...)
+				}
 				continue
 			}
 			Log("Reader[%p]: Returning native event: %s", r, ev.String())
@@ -65,7 +67,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			select {
 			case ev := <-r.NativeEventChan:
 				if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
-					r.buf = append(r.buf, byte(ev.Char))
+					if ev.KeyDown {
+						r.buf = append(r.buf, string(ev.Char)...)
+					}
 					break greedy
 				}
 				Log("Reader: Returning native event: %s", ev.String())
