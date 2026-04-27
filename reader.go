@@ -37,6 +37,7 @@ func (r *Reader) ReadEvent() (*InputEvent, error) {
 
 // ReadEventTimeout reads the next input event with an optional maximum blocking time.
 func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
+	Log("READER_LOOP: Entering ReadEventTimeout. BufLen: %d", len(r.buf))
 	var timer <-chan time.Time
 	if timeout > 0 {
 		timer = time.After(timeout)
@@ -50,9 +51,15 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 		case <-timer:
 			return nil, nil // Timeout
 		case ev := <-r.NativeEventChan:
-			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
+			Log("READER_TRACE: Recv NativeEvent: %s", ev.String())
+			// FIX: Apply VK=0 buffering ONLY to ConPTY (Windows). 
+			// Native X11 events must go straight to the app to avoid byte truncation.
+			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
 				if ev.KeyDown {
+					Log("READER_TRACE: VK is 0, ENQUEUEING Char '%c' (%d) to buf. Current buf: %q", ev.Char, ev.Char, string(r.buf))
 					r.buf = append(r.buf, string(ev.Char)...)
+				} else {
+					Log("READER_TRACE: VK is 0, KeyUp for '%c' ignored.", ev.Char)
 				}
 				continue
 			}
@@ -66,11 +73,15 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 		for {
 			select {
 			case ev := <-r.NativeEventChan:
-				if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
+				if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
 					if ev.KeyDown {
+						Log("READER_TRACE: (greedy) VK is 0, ENQUEUEING Char '%c' (%d) to buf. Current buf: %q", ev.Char, ev.Char, string(r.buf))
 						r.buf = append(r.buf, string(ev.Char)...)
+						break greedy // Go process buffer
+					} else {
+						Log("READER_TRACE: (greedy) VK is 0, KeyUp for '%c' ignored.", ev.Char)
+						continue
 					}
-					break greedy
 				}
 				Log("Reader: Returning native event: %s", ev.String())
 				return ev, nil
@@ -82,6 +93,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 		}
 
 		if len(r.buf) > 0 {
+			Log("READER_TRACE: Processing buffer: %q (len %d)", string(r.buf), len(r.buf))
 			if r.buf[0] == 0x1B {
 				// 1. Focus
 				if len(r.buf) >= 3 && r.buf[1] == '[' && (r.buf[2] == 'I' || r.buf[2] == 'O') {
@@ -230,8 +242,10 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			waitForMore:
 				select {
 				case ev := <-r.NativeEventChan:
-					if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
-						r.buf = append(r.buf, byte(ev.Char))
+					if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
+						if ev.KeyDown {
+							r.buf = append(r.buf, byte(ev.Char))
+						}
 						continue
 					}
 					Log("Reader: Returning native event: %s", ev.String())
@@ -240,7 +254,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					r.buf = append(r.buf, b...)
 					continue
 				case <-time.After(100 * time.Millisecond):
-					Log("Reader: ESC timeout (100ms) for ambiguous sequence. Returning ESC key.")
+					Log("READER_LOOP: ESC timeout (100ms) triggered. Buffer tail: %q", string(r.buf))
 					r.buf = r.buf[1:] // Consume the initial ESC byte
 					return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_ESCAPE, KeyDown: true}, nil
 				case err := <-r.errChan:
@@ -272,6 +286,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			// Handle regular UTF-8 characters
 			if utf8.FullRune(r.buf) {
 				character, size := utf8.DecodeRune(r.buf)
+				Log("READER_LOOP: Decoded UTF-8 rune from buffer: '%c' (%d), size: %d", character, character, size)
 				consumed := size
 
 				// Far2l workaround: some versions of far2l's terminal emulator
@@ -292,8 +307,10 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 
 		select {
 		case ev := <-r.NativeEventChan:
-			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 {
-				r.buf = append(r.buf, byte(ev.Char))
+			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
+				if ev.KeyDown {
+					r.buf = append(r.buf, byte(ev.Char))
+				}
 				continue
 			}
 			Log("Reader: Returning native event: %s", ev.String())

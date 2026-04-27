@@ -814,10 +814,11 @@ func TestReadEvent_Win32PulverizedSequence(t *testing.T) {
 	}
 
 	// Отправляем последовательность по одному символу
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 0x1B}
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '['}
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '0'}
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 'n'}
+	// Важно: ставим KeyDown: true, чтобы Reader не отфильтровал их как KeyUp
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 0x1B, KeyDown: true, InputSource: "ConPTY"}
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '[', KeyDown: true, InputSource: "ConPTY"}
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '0', KeyDown: true, InputSource: "ConPTY"}
+	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 'n', KeyDown: true, InputSource: "ConPTY"}
 
 	// Добавляем реальную клавишу в конце, чтобы ReadEvent не заблокировался навсегда
 	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_A, Char: 'a', KeyDown: true}
