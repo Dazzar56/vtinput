@@ -12,9 +12,9 @@ func TestFar2lStack_Integrity(t *testing.T) {
 	stk.PushU8(0xAA)
 	stk.PushU16(0xBBCC)
 	stk.PushU32(0x11223344)
-	stk.PushString("f4")
+	stk.PushString("appname")
 
-	if s := stk.PopString(); s != "f4" {
+	if s := stk.PopString(); s != "appname" {
 		t.Errorf("PopString failed: got %q", s)
 	}
 	if v := stk.PopU32(); v != 0x11223344 {
