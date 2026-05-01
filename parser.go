@@ -723,3 +723,142 @@ func ParseKitty(data []byte) (*InputEvent, int, error) {
 
 	return event, terminatorIdx + 1, nil
 }
+// ParseMouseLegacy handles standard X10 mouse sequences (ESC [ M Cb Cx Cy).
+func ParseMouseLegacy(data []byte) (*InputEvent, int, error) {
+	if len(data) < 6 {
+		return nil, 0, ErrIncomplete
+	}
+	if data[0] != 0x1B || data[1] != '[' || data[2] != 'M' {
+		return nil, 0, ErrInvalidSequence
+	}
+
+	cb := int(data[3]) - 32
+	cx := int(data[4]) - 32
+	cy := int(data[5]) - 32
+
+	if cx < 1 {
+		cx = 1
+	}
+	if cy < 1 {
+		cy = 1
+	}
+
+	event := &InputEvent{
+		Type:        MouseEventType,
+		MouseX:      uint16(cx) - 1, // 0-based
+		MouseY:      uint16(cy) - 1, // 0-based
+		InputSource: "legacy_mouse",
+	}
+
+	buttonPart := cb & 3
+	if (cb & 64) != 0 {
+		// Mouse Wheel
+		event.KeyDown = true
+		if buttonPart == 0 {
+			event.WheelDirection = 1 // Up
+		} else if buttonPart == 1 {
+			event.WheelDirection = -1 // Down
+		}
+	} else {
+		// Normal buttons
+		event.KeyDown = buttonPart != 3
+		switch buttonPart {
+		case 0:
+			event.ButtonState = FromLeft1stButtonPressed
+		case 1:
+			event.ButtonState = FromLeft2ndButtonPressed
+		case 2:
+			event.ButtonState = RightmostButtonPressed
+		}
+	}
+
+	if (cb & 32) != 0 {
+		event.MouseEventFlags |= MouseMoved
+	}
+
+	// Modifiers
+	if (cb & 4) != 0 {
+		event.ControlKeyState |= ShiftPressed
+	}
+	if (cb & 8) != 0 {
+		event.ControlKeyState |= LeftAltPressed
+	}
+	if (cb & 16) != 0 {
+		event.ControlKeyState |= LeftCtrlPressed
+	}
+
+	return event, 6, nil
+}
+
+// ParseMouseURXVT handles URXVT 1015 mouse sequences (ESC [ Cb ; Cx ; Cy M).
+func ParseMouseURXVT(data []byte) (*InputEvent, int, error) {
+	terminatorIdx, command, err := scanCSI(data)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if command != 'M' {
+		return nil, 0, ErrInvalidSequence
+	}
+
+	paramStr := string(data[2:terminatorIdx])
+	params := strings.Split(paramStr, ";")
+	if len(params) != 3 {
+		return nil, 0, ErrInvalidSequence
+	}
+
+	atoi := func(s string) int {
+		v, _ := strconv.Atoi(s)
+		return v
+	}
+
+	cb := atoi(params[0]) - 32
+	cx := atoi(params[1])
+	cy := atoi(params[2])
+
+	event := &InputEvent{
+		Type:        MouseEventType,
+		MouseX:      uint16(cx) - 1, // 0-based
+		MouseY:      uint16(cy) - 1, // 0-based
+		InputSource: "urxvt_mouse",
+	}
+
+	buttonPart := cb & 3
+	if (cb & 64) != 0 {
+		// Mouse Wheel
+		event.KeyDown = true
+		if buttonPart == 0 {
+			event.WheelDirection = 1 // Up
+		} else if buttonPart == 1 {
+			event.WheelDirection = -1 // Down
+		}
+	} else {
+		// Normal buttons
+		event.KeyDown = buttonPart != 3
+		switch buttonPart {
+		case 0:
+			event.ButtonState = FromLeft1stButtonPressed
+		case 1:
+			event.ButtonState = FromLeft2ndButtonPressed
+		case 2:
+			event.ButtonState = RightmostButtonPressed
+		}
+	}
+
+	if (cb & 32) != 0 {
+		event.MouseEventFlags |= MouseMoved
+	}
+
+	// Modifiers
+	if (cb & 4) != 0 {
+		event.ControlKeyState |= ShiftPressed
+	}
+	if (cb & 8) != 0 {
+		event.ControlKeyState |= LeftAltPressed
+	}
+	if (cb & 16) != 0 {
+		event.ControlKeyState |= LeftCtrlPressed
+	}
+
+	return event, terminatorIdx + 1, nil
+}

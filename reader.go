@@ -157,6 +157,32 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
+				// 5.5. Legacy Mouse (ESC [ M Cb Cx Cy)
+				if len(r.buf) >= 3 && r.buf[1] == '[' && r.buf[2] == 'M' {
+					Log("Reader: Attempting ParseMouseLegacy...")
+					if event, consumed, err := ParseMouseLegacy(r.buf); err == nil {
+						Log("Reader: ParseMouseLegacy successful.")
+						r.buf = r.buf[consumed:]
+						return event, nil
+					} else if err == ErrIncomplete {
+						goto waitForMore
+					}
+				}
+
+				// 5.6. URXVT Mouse (ESC [ Cb ; Cx ; Cy M)
+				if len(r.buf) > 3 && r.buf[1] == '[' {
+					if terminatorIdx, cmd, err := scanCSI(r.buf); err == nil && cmd == 'M' && terminatorIdx > 2 {
+						Log("Reader: Attempting ParseMouseURXVT...")
+						if event, consumed, err := ParseMouseURXVT(r.buf); err == nil {
+							Log("Reader: ParseMouseURXVT successful.")
+							r.buf = r.buf[consumed:]
+							return event, nil
+						}
+					} else if err == ErrIncomplete {
+						goto waitForMore
+					}
+				}
+
 				// 6. SS3 Sequences (ESC O ...)
 				if len(r.buf) > 1 && r.buf[1] == 'O' {
 					Log("Reader: Attempting ParseLegacySS3...")

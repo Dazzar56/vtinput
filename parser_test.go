@@ -349,6 +349,52 @@ func TestParseLegacySS3(t *testing.T) {
 	}
 }
 
+func TestParseMouseLegacy(t *testing.T) {
+	// 1. Left Button Press at 10,20
+	// cb = 0 (Left btn) + 32 = 32
+	// cx = 10 + 1 + 32 = 43
+	// cy = 20 + 1 + 32 = 53
+	data := []byte{0x1B, '[', 'M', 32, 43, 53}
+	event, _, err := ParseMouseLegacy(data)
+	if err != nil || event.MouseX != 10 || event.MouseY != 20 || event.ButtonState != FromLeft1stButtonPressed || !event.KeyDown {
+		t.Errorf("failed to parse Legacy Mouse: got %+v, err %v", event, err)
+	}
+
+	// 2. Mouse Wheel Up
+	// cb = 64 (Wheel) + 0 (Up) + 32 = 96
+	dataWheel := []byte{0x1B, '[', 'M', 96, 43, 53}
+	event, _, err = ParseMouseLegacy(dataWheel)
+	if err != nil || event.WheelDirection != 1 {
+		t.Errorf("failed to parse Legacy Mouse Wheel Up: got %+v, err %v", event, err)
+	}
+
+	// 3. Right Button Release
+	// cb = 3 (Release) + 32 = 35
+	dataRight := []byte{0x1B, '[', 'M', 35, 43, 53}
+	event, _, err = ParseMouseLegacy(dataRight)
+	if err != nil || event.KeyDown {
+		t.Errorf("failed to parse Legacy Mouse Release: got %+v", event)
+	}
+}
+
+func TestParseMouseURXVT(t *testing.T) {
+	// 1. Left Button Press at 10,20
+	// cb = 0 (Left btn) + 32 = 32
+	data := []byte("\x1b[32;11;21M")
+	event, _, err := ParseMouseURXVT(data)
+	if err != nil || event.MouseX != 10 || event.MouseY != 20 || event.ButtonState != FromLeft1stButtonPressed || !event.KeyDown {
+		t.Errorf("failed to parse URXVT Mouse: got %+v, err %v", event, err)
+	}
+
+	// 2. Mouse Wheel Up
+	// cb = 64 (Wheel) + 0 (Up) + 32 = 96
+	dataWheel := []byte("\x1b[96;11;21M")
+	event, _, err = ParseMouseURXVT(dataWheel)
+	if err != nil || event.WheelDirection != 1 {
+		t.Errorf("failed to parse URXVT Mouse Wheel Up: got %+v, err %v", event, err)
+	}
+}
+
 func TestParseMouseSGR(t *testing.T) {
 	// 1. Left Button Press at 10,20
 	data := []byte("\x1b[<0;10;20M")

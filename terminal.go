@@ -16,9 +16,11 @@ const (
 	seqEnableKitty  = "\x1b[>15u"
 	seqDisableKitty = "\x1b[<1u"
 
-	// 1003: Any event mouse (motion + buttons), 1006: SGR extended mode
-	seqEnableMouse  = "\x1b[?1003h\x1b[?1006h"
-	seqDisableMouse = "\x1b[?1006l\x1b[?1003l"
+	// 1002: Cell motion mouse, 1003: Any event mouse
+	// 1006: SGR extended mode, 1015: URXVT extended mode
+	// We enable all of them, the terminal will pick the best supported one.
+	seqEnableMouse  = "\x1b[?1002h\x1b[?1003h\x1b[?1015h\x1b[?1006h"
+	seqDisableMouse = "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l"
 
 	// 1004: Focus tracking, 2004: Bracketed paste
 	seqEnableExt  = "\x1b[?1004h\x1b[?2004h"
