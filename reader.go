@@ -93,7 +93,6 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 		}
 
 		if len(r.buf) > 0 {
-			Log("READER_TRACE: Processing buffer: %q (len %d)", string(r.buf), len(r.buf))
 			if r.buf[0] == 0x1B {
 				// 1. Focus
 				if len(r.buf) >= 3 && r.buf[1] == '[' && (r.buf[2] == 'I' || r.buf[2] == 'O') {
