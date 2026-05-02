@@ -205,15 +205,21 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						// Parse Legacy CSI FIRST to match far2l priority
 						event, consumed, pErr = ParseLegacyCSI(r.buf)
 
+						if pErr == nil && event != nil && r.far2lExtensionsEnabled {
+							// If legacy handled it, but Far2l is on, we ignore it to prevent
+							// duplicates, as we expect the primary event via Far2l APC.
+							r.buf = r.buf[consumed:]
+							continue
+						}
+
 						if pErr == ErrInvalidSequence || event == nil {
-							if !r.far2lExtensionsEnabled {
-								if cmd == '_' {
-									event, consumed, pErr = ParseWin32InputEvent(r.buf)
-								} else {
-									event, consumed, pErr = ParseKitty(r.buf)
-								}
+							// Modern sequences (Win32/Kitty) are always allowed, even if
+							// Far2l is on, because they don't collide and are used for
+							// high-precision input in nested sessions.
+							if cmd == '_' {
+								event, consumed, pErr = ParseWin32InputEvent(r.buf)
 							} else {
-								pErr = ErrInvalidSequence // Force skip Win32/Kitty
+								event, consumed, pErr = ParseKitty(r.buf)
 							}
 						}
 
