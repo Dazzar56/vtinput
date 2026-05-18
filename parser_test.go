@@ -823,10 +823,6 @@ func TestReadEvent_Mixed(t *testing.T) {
 		t.Errorf("Expected VK_OEM_MINUS from 0x1F, got %+v", e)
 	}
 }
-	if e.VirtualKeyCode != VK_OEM_MINUS {
-		t.Errorf("Expected VK_OEM_MINUS from 0x1F, got %+v", e)
-	}
-}
 
 func TestReadEvent_DA(t *testing.T) {
 	// DA sequence: ESC [ ? 1 ; 2 c (Terminal identifies as VT100 with extensions)
