@@ -218,6 +218,17 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
+				// 6.5. DA (Device Attributes) - consume \x1b[?...c
+				if len(parseBuf) > 2 && parseBuf[1] == '[' && parseBuf[2] == '?' {
+					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil && cmd == 'c' {
+						r.buf = r.buf[terminatorIdx+1+altOffset:]
+						Log("Reader: Consumed DA response.")
+						continue
+					} else if err == ErrIncomplete {
+						goto waitForMore
+					}
+				}
+
 				// 7. Other CSI Sequences (Legacy, Win32, Kitty)
 				if len(parseBuf) > 1 && parseBuf[1] == '[' {
 					Log("Reader: Attempting generic CSI parsing...")
