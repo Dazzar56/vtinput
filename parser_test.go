@@ -823,6 +823,43 @@ func TestReadEvent_Mixed(t *testing.T) {
 		t.Errorf("Expected VK_OEM_MINUS from 0x1F, got %+v", e)
 	}
 }
+	if e.VirtualKeyCode != VK_OEM_MINUS {
+		t.Errorf("Expected VK_OEM_MINUS from 0x1F, got %+v", e)
+	}
+}
+
+func TestReadEvent_DA(t *testing.T) {
+	// DA sequence: ESC [ ? 1 ; 2 c (Terminal identifies as VT100 with extensions)
+	// Followed by a real key 'A'
+	input := []byte("\x1b[?1;2c" + "A")
+	r := NewReader(bytes.NewReader(input))
+
+	e, err := r.ReadEvent()
+	if err != nil {
+		t.Fatalf("ReadEvent failed: %v", err)
+	}
+	// The DA response must be silently consumed, and we should get 'A' immediately.
+	if e.Char != 'A' {
+		t.Errorf("Expected 'A' (DA sequence should be swallowed), got %s", e.String())
+	}
+}
+
+func TestReadEvent_DSR(t *testing.T) {
+	// DSR Status response: ESC [ 0 n (Terminal reports OK)
+	// Followed by a real key 'B'
+	input := []byte("\x1b[0n" + "B")
+	r := NewReader(bytes.NewReader(input))
+
+	e, err := r.ReadEvent()
+	if err != nil {
+		t.Fatalf("ReadEvent failed: %v", err)
+	}
+	// The DSR response must be swallowed.
+	if e.Char != 'B' {
+		t.Errorf("Expected 'B' (DSR sequence should be swallowed), got %s", e.String())
+	}
+}
+
 func TestReadEvent_EscTimeout(t *testing.T) {
 	// Create a pipe to control data flow
 	pr, pw := io.Pipe()
