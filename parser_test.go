@@ -360,6 +360,31 @@ func TestParseLegacySS3_VTEBug(t *testing.T) {
 	}
 }
 
+func TestParseLegacySS3_PuttyCtrlArrows(t *testing.T) {
+	// Putty Ctrl+Right is ESC O C
+	data := []byte("\x1bOC")
+	event, consumed, err := ParseLegacySS3(data)
+	if err != nil || consumed != 3 {
+		t.Fatalf("failed to parse Ctrl+Right SS3: err %v, consumed %d", err, consumed)
+	}
+	if event.VirtualKeyCode != VK_RIGHT || (event.ControlKeyState&LeftCtrlPressed) == 0 {
+		t.Errorf("wrong event data for Ctrl+Right SS3: %+v", event)
+	}
+}
+
+func TestReadEvent_PuttyAltF1(t *testing.T) {
+	input := []byte("\x1b\x1b[11~")
+	r := NewReader(bytes.NewReader(input))
+
+	e, err := r.ReadEvent()
+	if err != nil {
+		t.Fatalf("ReadEvent failed: %v", err)
+	}
+	if e.Type != KeyEventType || e.VirtualKeyCode != VK_F1 || (e.ControlKeyState&LeftAltPressed) == 0 {
+		t.Errorf("Expected Alt+F1 from Putty Alt+F1 workaround, got %+v", e)
+	}
+}
+
 func TestReadEvent_VTEBrokenSS3(t *testing.T) {
 	// This tests the workaround in reader.go where ESC [ O is not swallowed by Focus Out
 	input := []byte("\x1b[O3P")

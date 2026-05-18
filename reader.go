@@ -94,29 +94,39 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 
 		if len(r.buf) > 0 {
 			if r.buf[0] == 0x1B {
+				altOffset := 0
+				parseBuf := r.buf
+				if len(r.buf) >= 3 && r.buf[0] == 0x1B && r.buf[1] == 0x1B {
+					c := r.buf[2]
+					if c == '[' || c == 'O' || c == '<' || c == '_' {
+						altOffset = 1
+						parseBuf = r.buf[1:]
+					}
+				}
+
 				// 1. Focus
-				if len(r.buf) >= 3 && r.buf[1] == '[' && (r.buf[2] == 'I' || r.buf[2] == 'O') {
+				if len(parseBuf) >= 3 && parseBuf[1] == '[' && (parseBuf[2] == 'I' || parseBuf[2] == 'O') {
 					// Workaround for VTE bug: Alt+F1..F4 sent as ESC [ O 3 P instead of ESC O 3 P
 					isVteBrokenSS3 := false
-					if r.buf[2] == 'O' && len(r.buf) > 3 {
-						c := r.buf[3]
+					if parseBuf[2] == 'O' && len(parseBuf) > 3 {
+						c := parseBuf[3]
 						if (c >= '0' && c <= '9') || c == 'P' || c == 'Q' || c == 'R' || c == 'S' {
 							isVteBrokenSS3 = true
 						}
 					}
 					if !isVteBrokenSS3 {
-						event := &InputEvent{Type: FocusEventType, SetFocus: r.buf[2] == 'I'}
-						r.buf = r.buf[3:]
+						event := &InputEvent{Type: FocusEventType, SetFocus: parseBuf[2] == 'I'}
+						r.buf = r.buf[3+altOffset:]
 						Log("Reader: Parsed Focus %v.", event.SetFocus)
 						return event, nil
 					}
 				}
 
 				// 2. DSR Replies (ESC [ ... n)
-				if len(r.buf) > 2 && r.buf[1] == '[' {
-					if terminatorIdx, cmd, err := scanCSI(r.buf); err == nil {
+				if len(parseBuf) > 2 && parseBuf[1] == '[' {
+					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil {
 						if cmd == 'n' {
-							r.buf = r.buf[terminatorIdx+1:]
+							r.buf = r.buf[terminatorIdx+1+altOffset:]
 							Log("Reader: Parsed DSR reply. Continuing.")
 							continue
 						}
@@ -126,11 +136,11 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				}
 
 				// 3. APC (Far2l)
-				if len(r.buf) > 1 && r.buf[1] == '_' {
+				if len(parseBuf) > 1 && parseBuf[1] == '_' {
 					Log("Reader: Attempting ParseFar2lAPC...")
-					if event, consumed, err := ParseFar2lAPC(r.buf); err == nil {
+					if event, consumed, err := ParseFar2lAPC(parseBuf); err == nil {
 						Log("Reader: ParseFar2lAPC successful, consumed %d bytes.", consumed)
-						r.buf = r.buf[consumed:]
+						r.buf = r.buf[consumed+altOffset:]
 						if event != nil {
 							if event.Type == Far2lEventType && event.Far2lCommand == "ok" {
 								r.far2lExtensionsEnabled = true
@@ -147,19 +157,20 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				}
 
 				// 4. Bracketed Paste (ESC [ 2 0 0 ~ / ESC [ 2 0 1 ~)
-				if len(r.buf) >= 6 && r.buf[1] == '[' && r.buf[2] == '2' && r.buf[3] == '0' && (r.buf[4] == '0' || r.buf[4] == '1') && r.buf[5] == '~' {
-					event := &InputEvent{Type: PasteEventType, PasteStart: r.buf[4] == '0'}
-					r.buf = r.buf[6:]
+				if len(parseBuf) >= 6 && parseBuf[1] == '[' && parseBuf[2] == '2' && parseBuf[3] == '0' && (parseBuf[4] == '0' || parseBuf[4] == '1') && parseBuf[5] == '~' {
+					event := &InputEvent{Type: PasteEventType, PasteStart: parseBuf[4] == '0'}
+					r.buf = r.buf[6+altOffset:]
 					Log("Reader: Parsed Paste event.")
 					return event, nil
 				}
 
 				// 5. SGR Mouse (ESC [ < ... M/m)
-				if len(r.buf) > 3 && r.buf[1] == '[' && r.buf[2] == '<' {
+				if len(parseBuf) > 3 && parseBuf[1] == '[' && parseBuf[2] == '<' {
 					Log("Reader: Attempting ParseMouseSGR...")
-					if event, consumed, err := ParseMouseSGR(r.buf); err == nil {
+					if event, consumed, err := ParseMouseSGR(parseBuf); err == nil {
 						Log("Reader: ParseMouseSGR successful.")
-						r.buf = r.buf[consumed:]
+						r.buf = r.buf[consumed+altOffset:]
+						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -167,11 +178,12 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				}
 
 				// 5.5. Legacy Mouse (ESC [ M Cb Cx Cy)
-				if len(r.buf) >= 3 && r.buf[1] == '[' && r.buf[2] == 'M' {
+				if len(parseBuf) >= 3 && parseBuf[1] == '[' && parseBuf[2] == 'M' {
 					Log("Reader: Attempting ParseMouseLegacy...")
-					if event, consumed, err := ParseMouseLegacy(r.buf); err == nil {
+					if event, consumed, err := ParseMouseLegacy(parseBuf); err == nil {
 						Log("Reader: ParseMouseLegacy successful.")
-						r.buf = r.buf[consumed:]
+						r.buf = r.buf[consumed+altOffset:]
+						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -179,12 +191,13 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				}
 
 				// 5.6. URXVT Mouse (ESC [ Cb ; Cx ; Cy M)
-				if len(r.buf) > 3 && r.buf[1] == '[' {
-					if terminatorIdx, cmd, err := scanCSI(r.buf); err == nil && cmd == 'M' && terminatorIdx > 2 {
+				if len(parseBuf) > 3 && parseBuf[1] == '[' {
+					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil && cmd == 'M' && terminatorIdx > 2 {
 						Log("Reader: Attempting ParseMouseURXVT...")
-						if event, consumed, err := ParseMouseURXVT(r.buf); err == nil {
+						if event, consumed, err := ParseMouseURXVT(parseBuf); err == nil {
 							Log("Reader: ParseMouseURXVT successful.")
-							r.buf = r.buf[consumed:]
+							r.buf = r.buf[consumed+altOffset:]
+							if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
 							return event, nil
 						}
 					} else if err == ErrIncomplete {
@@ -193,11 +206,12 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				}
 
 				// 6. SS3 Sequences (ESC O ... or broken VTE ESC [ O ...)
-				if (len(r.buf) > 1 && r.buf[1] == 'O') || (len(r.buf) > 2 && r.buf[1] == '[' && r.buf[2] == 'O') {
+				if (len(parseBuf) > 1 && parseBuf[1] == 'O') || (len(parseBuf) > 2 && parseBuf[1] == '[' && parseBuf[2] == 'O') {
 					Log("Reader: Attempting ParseLegacySS3...")
-					if event, consumed, err := ParseLegacySS3(r.buf); err == nil {
+					if event, consumed, err := ParseLegacySS3(parseBuf); err == nil {
 						Log("Reader: ParseLegacySS3 successful.")
-						r.buf = r.buf[consumed:]
+						r.buf = r.buf[consumed+altOffset:]
+						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -205,20 +219,20 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				}
 
 				// 7. Other CSI Sequences (Legacy, Win32, Kitty)
-				if len(r.buf) > 1 && r.buf[1] == '[' {
+				if len(parseBuf) > 1 && parseBuf[1] == '[' {
 					Log("Reader: Attempting generic CSI parsing...")
-					if terminatorIdx, cmd, err := scanCSI(r.buf); err == nil {
+					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil {
 						var event *InputEvent
 						var consumed int
 						var pErr error
 
 						// Parse Legacy CSI FIRST to match far2l priority
-						event, consumed, pErr = ParseLegacyCSI(r.buf)
+						event, consumed, pErr = ParseLegacyCSI(parseBuf)
 
 						if pErr == nil && event != nil && r.far2lExtensionsEnabled {
 							// If legacy handled it, but Far2l is on, we ignore it to prevent
 							// duplicates, as we expect the primary event via Far2l APC.
-							r.buf = r.buf[consumed:]
+							r.buf = r.buf[consumed+altOffset:]
 							continue
 						}
 
@@ -227,19 +241,20 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 							// Far2l is on, because they don't collide and are used for
 							// high-precision input in nested sessions.
 							if cmd == '_' {
-								event, consumed, pErr = ParseWin32InputEvent(r.buf)
+								event, consumed, pErr = ParseWin32InputEvent(parseBuf)
 							} else {
-								event, consumed, pErr = ParseKitty(r.buf)
+								event, consumed, pErr = ParseKitty(parseBuf)
 							}
 						}
 
 						if pErr == nil && event != nil {
-							r.buf = r.buf[consumed:]
+							r.buf = r.buf[consumed+altOffset:]
+							if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
 							Log("Reader: Returning CSI event: %s", event.String())
 							return event, nil
 						} else if pErr == ErrInvalidSequence {
-							Log("Reader: Unsupported CSI sequence: %q", string(r.buf[:terminatorIdx+1]))
-							r.buf = r.buf[terminatorIdx+1:]
+							Log("Reader: Unsupported CSI sequence: %q", string(parseBuf[:terminatorIdx+1]))
+							r.buf = r.buf[terminatorIdx+1+altOffset:]
 							continue
 						} else {
 							Log("Reader: Unhandled error parsing CSI: %v", pErr)
@@ -250,7 +265,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				}
 
 				// 8. Double ESC
-				if len(r.buf) >= 2 && r.buf[1] == 0x1B {
+				if len(r.buf) >= 2 && r.buf[1] == 0x1B && altOffset == 0 {
 					Log("Reader: Parsed Double ESC.")
 					r.buf = r.buf[2:]
 					return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_ESCAPE, KeyDown: true, InputSource: "legacy_esc"}, nil

@@ -373,6 +373,18 @@ func ParseLegacySS3(data []byte) (*InputEvent, int, error) {
 	case 'S': event.VirtualKeyCode = VK_F4
 	case 'H': event.VirtualKeyCode = VK_HOME
 	case 'F': event.VirtualKeyCode = VK_END
+	case 'A':
+		event.VirtualKeyCode = VK_UP
+		if mod == 1 { event.ControlKeyState |= LeftCtrlPressed }
+	case 'B':
+		event.VirtualKeyCode = VK_DOWN
+		if mod == 1 { event.ControlKeyState |= LeftCtrlPressed }
+	case 'C':
+		event.VirtualKeyCode = VK_RIGHT
+		if mod == 1 { event.ControlKeyState |= LeftCtrlPressed }
+	case 'D':
+		event.VirtualKeyCode = VK_LEFT
+		if mod == 1 { event.ControlKeyState |= LeftCtrlPressed }
 	default:
 		return nil, 0, ErrInvalidSequence
 	}
