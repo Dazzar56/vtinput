@@ -348,6 +348,31 @@ func TestParseLegacySS3(t *testing.T) {
 		t.Errorf("wrong event data for Alt+F1 SS3: %+v", event)
 	}
 }
+func TestParseLegacySS3_VTEBug(t *testing.T) {
+	// VTE terminals incorrectly send ESC [ O 3 P instead of ESC O 3 P for Alt+F1
+	data := []byte("\x1b[O3P")
+	event, consumed, err := ParseLegacySS3(data)
+	if err != nil || consumed != 5 {
+		t.Fatalf("failed to parse VTE broken SS3: err %v, consumed %d", err, consumed)
+	}
+	if event.VirtualKeyCode != VK_F1 || (event.ControlKeyState&LeftAltPressed) == 0 {
+		t.Errorf("wrong event data for VTE Alt+F1 SS3: %+v", event)
+	}
+}
+
+func TestReadEvent_VTEBrokenSS3(t *testing.T) {
+	// This tests the workaround in reader.go where ESC [ O is not swallowed by Focus Out
+	input := []byte("\x1b[O3P")
+	r := NewReader(bytes.NewReader(input))
+
+	e, err := r.ReadEvent()
+	if err != nil {
+		t.Fatalf("ReadEvent failed: %v", err)
+	}
+	if e.Type != KeyEventType || e.VirtualKeyCode != VK_F1 || (e.ControlKeyState&LeftAltPressed) == 0 {
+		t.Errorf("Expected Alt+F1 from VTE bug workaround, got %+v", e)
+	}
+}
 
 func TestParseMouseLegacy(t *testing.T) {
 	// 1. Left Button Press at 10,20

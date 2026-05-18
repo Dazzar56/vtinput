@@ -96,10 +96,20 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			if r.buf[0] == 0x1B {
 				// 1. Focus
 				if len(r.buf) >= 3 && r.buf[1] == '[' && (r.buf[2] == 'I' || r.buf[2] == 'O') {
-					event := &InputEvent{Type: FocusEventType, SetFocus: r.buf[2] == 'I'}
-					r.buf = r.buf[3:]
-					Log("Reader: Parsed Focus %v.", event.SetFocus)
-					return event, nil
+					// Workaround for VTE bug: Alt+F1..F4 sent as ESC [ O 3 P instead of ESC O 3 P
+					isVteBrokenSS3 := false
+					if r.buf[2] == 'O' && len(r.buf) > 3 {
+						c := r.buf[3]
+						if (c >= '0' && c <= '9') || c == 'P' || c == 'Q' || c == 'R' || c == 'S' {
+							isVteBrokenSS3 = true
+						}
+					}
+					if !isVteBrokenSS3 {
+						event := &InputEvent{Type: FocusEventType, SetFocus: r.buf[2] == 'I'}
+						r.buf = r.buf[3:]
+						Log("Reader: Parsed Focus %v.", event.SetFocus)
+						return event, nil
+					}
 				}
 
 				// 2. DSR Replies (ESC [ ... n)
@@ -182,8 +192,8 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
-				// 6. SS3 Sequences (ESC O ...)
-				if len(r.buf) > 1 && r.buf[1] == 'O' {
+				// 6. SS3 Sequences (ESC O ... or broken VTE ESC [ O ...)
+				if (len(r.buf) > 1 && r.buf[1] == 'O') || (len(r.buf) > 2 && r.buf[1] == '[' && r.buf[2] == 'O') {
 					Log("Reader: Attempting ParseLegacySS3...")
 					if event, consumed, err := ParseLegacySS3(r.buf); err == nil {
 						Log("Reader: ParseLegacySS3 successful.")

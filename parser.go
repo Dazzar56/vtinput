@@ -333,14 +333,20 @@ func ParseLegacySS3(data []byte) (*InputEvent, int, error) {
 	if len(data) < 2 {
 		return nil, 0, ErrIncomplete
 	}
-	if data[0] != 0x1B || data[1] != 'O' {
+	isCSI := false
+	if data[0] == 0x1B && len(data) > 2 && data[1] == '[' && data[2] == 'O' {
+		isCSI = true
+	} else if data[0] != 0x1B || data[1] != 'O' {
 		return nil, 0, ErrInvalidSequence
-	}
-	if len(data) < 3 {
-		return nil, 0, ErrIncomplete
 	}
 
 	i := 2
+	if isCSI {
+		i = 3
+	}
+	if len(data) <= i {
+		return nil, 0, ErrIncomplete
+	}
 	mod := 1
 	// Check for optional modifier digit (e.g. \x1bO3P where 3 is Alt)
 	if data[i] >= '0' && data[i] <= '9' {
