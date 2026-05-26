@@ -1,6 +1,6 @@
 module github.com/unxed/vtinput
 
-go 1.25.0
+go 1.25.5
 
 require golang.org/x/term v0.40.0
 
