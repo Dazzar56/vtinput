@@ -63,15 +63,17 @@ func main() {
 	useWin32 := flag.Bool("win32", true, "Enable Win32 Input Mode")
 	useKitty := flag.Bool("kitty", true, "Enable Kitty Keyboard Protocol")
 	useMouse := flag.Bool("mouse", true, "Enable Mouse Support")
-	useExt := flag.Bool("ext", true, "Enable Focus and Bracketed Paste")
-	useSync := flag.Bool("sync", false, "Use synchronous reader (ReaderSync)")
+	useExt   := flag.Bool("ext", true, "Enable Focus and Bracketed Paste")
+	useFar2l := flag.Bool("far2l", true, "Enable far2l terminal extensions ")
+	useSync  := flag.Bool("sync", false, "Use synchronous reader (ReaderSync)")
 	flag.Parse()
 
 	var mask vtinput.Protocol
 	if *useWin32 { mask |= vtinput.Win32InputMode }
 	if *useKitty { mask |= vtinput.KittyKeyboard }
 	if *useMouse { mask |= vtinput.MouseSupport }
-	if *useExt { mask |= vtinput.FocusAndPaste }
+	if *useExt   { mask |= vtinput.FocusAndPaste }
+	if *useFar2l { mask |= vtinput.Far2lExtensions }
 
 	restore, err := vtinput.EnableProtocols(mask)
 	if err != nil {
