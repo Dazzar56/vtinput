@@ -3,11 +3,11 @@
 package vtinput
 
 import (
+	"encoding/binary"
 	"io"
 	"os"
 	"time"
 	"unsafe"
-	"encoding/binary"
 
 	"golang.org/x/sys/windows"
 )
@@ -148,7 +148,7 @@ func (r *Reader) readConPTYEventTimeout(timeout time.Duration) (*InputEvent, err
 			InputSource:     "ConPTY",
 			KeyDown:         true,
 		}
-		if (ev.MouseEventFlags & MouseWheeled > 0) || (ev.MouseEventFlags & MouseHWheeled > 0) {
+		if (ev.MouseEventFlags&MouseWheeled > 0) || (ev.MouseEventFlags&MouseHWheeled > 0) {
 			if int16(highWord(ev.ButtonState)) > 0 {
 				ev.WheelDirection = 1
 			} else {

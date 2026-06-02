@@ -10,25 +10,25 @@ import (
 // Reader reads input synchronously without a background goroutine.
 // It measures the time from receiving raw bytes to generating an InputEvent.
 type Reader struct {
-	in     io.Reader
-	buf    []byte
-	done   chan struct{}
-	useConPTY bool // Windows only
+	in                     io.Reader
+	buf                    []byte
+	done                   chan struct{}
+	useConPTY              bool // Windows only
 	far2lExtensionsEnabled bool
-	conHandle    uintptr // Windows only: console handle
-	cancelEvent  uintptr // Windows only: event handle for cancellation
-	oldMode      uint32  // Windows only: saved console mode
-	stopPipe     [2]int  // Unix only: pipe for interrupting Poll
+	conHandle              uintptr // Windows only: console handle
+	cancelEvent            uintptr // Windows only: event handle for cancellation
+	oldMode                uint32  // Windows only: saved console mode
+	stopPipe               [2]int  // Unix only: pipe for interrupting Poll
 
-	mu            sync.Mutex
-	lastLatency   time.Duration
-	totalLatency  time.Duration
-	eventCount    int64
+	mu             sync.Mutex
+	lastLatency    time.Duration
+	totalLatency   time.Duration
+	eventCount     int64
 	lastReceivedAt time.Time
 
-	eventChan  chan *InputEvent
-	stopRead   chan struct{}
-	onceStop   sync.Once
+	eventChan chan *InputEvent
+	stopRead  chan struct{}
+	onceStop  sync.Once
 
 	MetricsEnabled bool
 }
@@ -189,7 +189,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				if len(parseBuf) > 3 && parseBuf[1] == '[' && parseBuf[2] == '<' {
 					if event, consumed, err := ParseMouseSGR(parseBuf); err == nil {
 						r.buf = r.buf[consumed+altOffset:]
-						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						if altOffset > 0 {
+							event.ControlKeyState |= LeftAltPressed
+						}
 						r.recordLatency(time.Since(r.lastReceivedAt))
 						return event, nil
 					} else if err == ErrIncomplete {
@@ -201,7 +203,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				if len(parseBuf) >= 3 && parseBuf[1] == '[' && parseBuf[2] == 'M' {
 					if event, consumed, err := ParseMouseLegacy(parseBuf); err == nil {
 						r.buf = r.buf[consumed+altOffset:]
-						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						if altOffset > 0 {
+							event.ControlKeyState |= LeftAltPressed
+						}
 						r.recordLatency(time.Since(r.lastReceivedAt))
 						return event, nil
 					} else if err == ErrIncomplete {
@@ -214,7 +218,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil && cmd == 'M' && terminatorIdx > 2 {
 						if event, consumed, err := ParseMouseURXVT(parseBuf); err == nil {
 							r.buf = r.buf[consumed+altOffset:]
-							if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+							if altOffset > 0 {
+								event.ControlKeyState |= LeftAltPressed
+							}
 							r.recordLatency(time.Since(r.lastReceivedAt))
 							return event, nil
 						}
@@ -227,7 +233,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				if (len(parseBuf) > 1 && parseBuf[1] == 'O') || (len(parseBuf) > 2 && parseBuf[1] == '[' && parseBuf[2] == 'O') {
 					if event, consumed, err := ParseLegacySS3(parseBuf); err == nil {
 						r.buf = r.buf[consumed+altOffset:]
-						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						if altOffset > 0 {
+							event.ControlKeyState |= LeftAltPressed
+						}
 						r.recordLatency(time.Since(r.lastReceivedAt))
 						return event, nil
 					} else if err == ErrIncomplete {
@@ -269,7 +277,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 
 						if pErr == nil && event != nil {
 							r.buf = r.buf[consumed+altOffset:]
-							if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+							if altOffset > 0 {
+								event.ControlKeyState |= LeftAltPressed
+							}
 							r.recordLatency(time.Since(r.lastReceivedAt))
 							return event, nil
 						} else if pErr == ErrInvalidSequence {
