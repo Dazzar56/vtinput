@@ -45,7 +45,9 @@ func NewReader(in io.Reader) *Reader {
 
 				_, err := unix.Poll(fds, -1)
 				if err != nil {
-					if err == unix.EINTR { continue }
+					if err == unix.EINTR {
+						continue
+					}
 					r.errChan <- err
 					return
 				}
@@ -65,7 +67,9 @@ func NewReader(in io.Reader) *Reader {
 					Log("Reader(syscall): Read error: %v", err)
 				}
 				if err != nil {
-					if err == syscall.EAGAIN || err == syscall.EINTR { continue }
+					if err == syscall.EAGAIN || err == syscall.EINTR {
+						continue
+					}
 					r.errChan <- err
 					return
 				}

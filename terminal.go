@@ -1,8 +1,8 @@
 package vtinput
 
 import (
-	"runtime"
 	"os"
+	"runtime"
 	"time"
 
 	"golang.org/x/term"
@@ -87,16 +87,16 @@ func EnableProtocols(p Protocol) (func(), error) {
 	}
 
 	// On Windows, if we are using the native ConPTY/WinAPI reader (default),
-	// we MUST NOT enable redundant ANSI protocols. WinAPI natively provides 
+	// we MUST NOT enable redundant ANSI protocols. WinAPI natively provides
 	// exact Key, Mouse, and Focus events. Windows also has native clipboard APIs.
-	// If we request ANSI protocols, ConPTY will "pulverize" the resulting ESC 
+	// If we request ANSI protocols, ConPTY will "pulverize" the resulting ESC
 	// sequences into VK:0 key events, causing massive duplication and lag.
 	isWindowsNative := runtime.GOOS == "windows" && (InputMode == "" || InputMode == "ConPTY")
 	if InputMode == "winapi" || isWindowsNative {
 		Log("VTINPUT: Windows Native mode detected, suppressing redundant ANSI protocols.")
 		enableSeq = ""
 		disableSeq = ""
-		
+
 		// The ONLY exception is Bracketed Paste. WinAPI does not have a PASTE_EVENT.
 		// We must ask the terminal to wrap pastes in \x1b[200~ so our parser can catch them.
 		if p&FocusAndPaste != 0 {

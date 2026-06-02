@@ -54,10 +54,18 @@ func main() {
 	flag.Parse()
 
 	var mask vtinput.Protocol
-	if *useWin32 { mask |= vtinput.Win32InputMode }
-	if *useKitty { mask |= vtinput.KittyKeyboard }
-	if *useMouse { mask |= vtinput.MouseSupport }
-	if *useExt { mask |= vtinput.FocusAndPaste }
+	if *useWin32 {
+		mask |= vtinput.Win32InputMode
+	}
+	if *useKitty {
+		mask |= vtinput.KittyKeyboard
+	}
+	if *useMouse {
+		mask |= vtinput.MouseSupport
+	}
+	if *useExt {
+		mask |= vtinput.FocusAndPaste
+	}
 
 	restore, err := vtinput.EnableProtocols(mask)
 	if err != nil {
@@ -101,25 +109,25 @@ func main() {
 			}
 			drawUI()
 
-			case <-ticker.C:
-				mu.Lock()
-				changed := false
-				now := time.Now()
-				for k, v := range pressedKeys {
-					// Remove legacy keys after 150ms timeout
-					if v.isLegacy && now.Sub(v.pressedAt) > 150*time.Millisecond {
-						delete(pressedKeys, k)
-						changed = true
+		case <-ticker.C:
+			mu.Lock()
+			changed := false
+			now := time.Now()
+			for k, v := range pressedKeys {
+				// Remove legacy keys after 150ms timeout
+				if v.isLegacy && now.Sub(v.pressedAt) > 150*time.Millisecond {
+					delete(pressedKeys, k)
+					changed = true
 					// Remove modern keys only if released AND 100ms passed (to make fast typing visible)
-					} else if !v.isLegacy && !v.isDown && now.Sub(v.pressedAt) > 100*time.Millisecond {
-						delete(pressedKeys, k)
-						changed = true
-					}
+				} else if !v.isLegacy && !v.isDown && now.Sub(v.pressedAt) > 100*time.Millisecond {
+					delete(pressedKeys, k)
+					changed = true
 				}
-				mu.Unlock()
-				if changed {
-					drawUI()
-				}
+			}
+			mu.Unlock()
+			if changed {
+				drawUI()
+			}
 		}
 	}
 }
@@ -205,8 +213,12 @@ func drawUI() {
 
 	// Determine if we have specific shift keys pressed to avoid generic modifier fallback
 	shiftInMap := false
-	if _, ok := pressedKeys[vtinput.VK_LSHIFT]; ok { shiftInMap = true }
-	if _, ok := pressedKeys[vtinput.VK_RSHIFT]; ok { shiftInMap = true }
+	if _, ok := pressedKeys[vtinput.VK_LSHIFT]; ok {
+		shiftInMap = true
+	}
+	if _, ok := pressedKeys[vtinput.VK_RSHIFT]; ok {
+		shiftInMap = true
+	}
 
 	for _, row := range keyRows {
 		col := 0
@@ -229,20 +241,36 @@ func drawUI() {
 			}
 
 			// Check modifiers from global state
-			if vk == vtinput.VK_LCONTROL && currentMods.Contains(vtinput.LeftCtrlPressed)  { isPressed = true }
-			if vk == vtinput.VK_RCONTROL && currentMods.Contains(vtinput.RightCtrlPressed) { isPressed = true }
-			if vk == vtinput.VK_LMENU && currentMods.Contains(vtinput.LeftAltPressed)      { isPressed = true }
-			if vk == vtinput.VK_RMENU && currentMods.Contains(vtinput.RightAltPressed)     { isPressed = true }
+			if vk == vtinput.VK_LCONTROL && currentMods.Contains(vtinput.LeftCtrlPressed) {
+				isPressed = true
+			}
+			if vk == vtinput.VK_RCONTROL && currentMods.Contains(vtinput.RightCtrlPressed) {
+				isPressed = true
+			}
+			if vk == vtinput.VK_LMENU && currentMods.Contains(vtinput.LeftAltPressed) {
+				isPressed = true
+			}
+			if vk == vtinput.VK_RMENU && currentMods.Contains(vtinput.RightAltPressed) {
+				isPressed = true
+			}
 
 			// For Shift, only use generic modifier if no specific shift key is detected in pressedKeys.
 			// This allows distinguishing LShift/RShift in modern protocols, while keeping support for legacy.
 			if !shiftInMap {
-				if vk == vtinput.VK_LSHIFT && currentMods.Contains(vtinput.ShiftPressed) { isPressed = true }
-				if vk == vtinput.VK_RSHIFT && currentMods.Contains(vtinput.ShiftPressed) { isPressed = true }
+				if vk == vtinput.VK_LSHIFT && currentMods.Contains(vtinput.ShiftPressed) {
+					isPressed = true
+				}
+				if vk == vtinput.VK_RSHIFT && currentMods.Contains(vtinput.ShiftPressed) {
+					isPressed = true
+				}
 			}
 
-			if vk == vtinput.VK_CAPITAL && currentMods.Contains(vtinput.CapsLockOn) { isPressed = true }
-			if vk == vtinput.VK_NUMLOCK && currentMods.Contains(vtinput.NumLockOn)  { isPressed = true }
+			if vk == vtinput.VK_CAPITAL && currentMods.Contains(vtinput.CapsLockOn) {
+				isPressed = true
+			}
+			if vk == vtinput.VK_NUMLOCK && currentMods.Contains(vtinput.NumLockOn) {
+				isPressed = true
+			}
 
 			if isPressed {
 				// Green background for pressed keys
@@ -265,8 +293,14 @@ func drawUI() {
 }
 
 func isExitEvent(e *vtinput.InputEvent) bool {
-	if !e.KeyDown { return false }
-	if e.VirtualKeyCode == vtinput.VK_ESCAPE { return true }
-	if e.VirtualKeyCode == vtinput.VK_C && (e.ControlKeyState&vtinput.LeftCtrlPressed) != 0 { return true }
+	if !e.KeyDown {
+		return false
+	}
+	if e.VirtualKeyCode == vtinput.VK_ESCAPE {
+		return true
+	}
+	if e.VirtualKeyCode == vtinput.VK_C && (e.ControlKeyState&vtinput.LeftCtrlPressed) != 0 {
+		return true
+	}
 	return false
 }

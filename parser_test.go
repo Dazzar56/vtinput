@@ -3,10 +3,10 @@ package vtinput
 import (
 	"bytes"
 	"encoding/base64"
+	"io"
 	"reflect"
 	"testing"
 	"time"
-	"io"
 )
 
 func TestScanCSI(t *testing.T) {
@@ -79,12 +79,12 @@ func TestParseFar2lAPC(t *testing.T) {
 
 	// Test keyboard input f2l
 	stk := Far2lStack{}
-	stk.PushU16(1)    // repeat
-	stk.PushU16(0x41) // vk
-	stk.PushU16(0x1e) // scancode
-	stk.PushU32(0)    // modifiers
+	stk.PushU16(1)           // repeat
+	stk.PushU16(0x41)        // vk
+	stk.PushU16(0x1e)        // scancode
+	stk.PushU32(0)           // modifiers
 	stk.PushU32(uint32('a')) // char
-	stk.PushU8('K')   // cmd
+	stk.PushU8('K')          // cmd
 
 	b64 := base64.StdEncoding.EncodeToString(stk)
 	data2 := []byte("\x1b_f2l:" + b64 + "\x07")
@@ -104,12 +104,12 @@ func TestParseFar2lAPC_Mouse(t *testing.T) {
 	// Parser Pop order for 'm': Flags (U8), Mods (U8), Btn (U16), Y (U16), X (U16)
 	// We must push in REVERSE order
 	stk := Far2lStack{}
-	stk.PushU16(10)   // X
-	stk.PushU16(20)   // Y
-	stk.PushU16(1)    // Button (Left)
-	stk.PushU8(0x10)  // Mods (Shift)
-	stk.PushU8(0)     // Flags (0 = normal)
-	stk.PushU8('m')   // cmd
+	stk.PushU16(10)  // X
+	stk.PushU16(20)  // Y
+	stk.PushU16(1)   // Button (Left)
+	stk.PushU8(0x10) // Mods (Shift)
+	stk.PushU8(0)    // Flags (0 = normal)
+	stk.PushU8('m')  // cmd
 
 	b64 := base64.StdEncoding.EncodeToString(stk)
 	data := []byte("\x1b_f2l:" + b64 + "\x07")
@@ -135,12 +135,12 @@ func TestParseFar2lAPC_Mouse(t *testing.T) {
 
 func TestParseFar2lAPC_MouseWheel(t *testing.T) {
 	stk := Far2lStack{}
-	stk.PushU16(10)   // X
-	stk.PushU16(20)   // Y
-	stk.PushU32(0x00780000) // ButtonState with wheel delta > 0 in high word (e.g. 120 << 16)
-	stk.PushU32(0)    // Mods
+	stk.PushU16(10)           // X
+	stk.PushU16(20)           // Y
+	stk.PushU32(0x00780000)   // ButtonState with wheel delta > 0 in high word (e.g. 120 << 16)
+	stk.PushU32(0)            // Mods
 	stk.PushU32(MouseWheeled) // Flags
-	stk.PushU8('M')   // cmd (using normal M)
+	stk.PushU8('M')           // cmd (using normal M)
 
 	b64 := base64.StdEncoding.EncodeToString(stk)
 	data := []byte("\x1b_f2l:" + b64 + "\x07")
@@ -268,8 +268,8 @@ func TestParseLegacyCSI_ModernSequences(t *testing.T) {
 	// или сложные последовательности Kitty (с :)
 	testCases := [][]byte{
 		[]byte("\x1b[<0;10;20M"), // Mouse SGR
-		[]byte("\x1b[1;1:3B"),     // Kitty release
-		[]byte("\x1b[97:65;5u"),   // Kitty char with base
+		[]byte("\x1b[1;1:3B"),    // Kitty release
+		[]byte("\x1b[97:65;5u"),  // Kitty char with base
 	}
 
 	for _, tc := range testCases {
@@ -483,10 +483,10 @@ func TestParseMouseSGR(t *testing.T) {
 }
 func TestParseKitty(t *testing.T) {
 	tests := []struct {
-		name     string
-		data     []byte
-		want     *InputEvent
-		err      error
+		name string
+		data []byte
+		want *InputEvent
+		err  error
 	}{
 		{
 			name: "Char 'a' (no mods)",
@@ -691,16 +691,24 @@ func TestReadEvent_Focus(t *testing.T) {
 
 	// Check Focus In
 	e, err := r.ReadEvent()
-	if err != nil { t.Fatalf("ReadEvent 1 failed: %v", err) }
-	if e == nil { t.Fatal("ReadEvent 1 returned nil event") }
+	if err != nil {
+		t.Fatalf("ReadEvent 1 failed: %v", err)
+	}
+	if e == nil {
+		t.Fatal("ReadEvent 1 returned nil event")
+	}
 	if e.Type != FocusEventType || !e.SetFocus {
 		t.Errorf("Expected Focus IN, got %+v", e)
 	}
 
 	// Check Focus Out
 	e, err = r.ReadEvent()
-	if err != nil { t.Fatalf("ReadEvent 2 failed: %v", err) }
-	if e == nil { t.Fatal("ReadEvent 2 returned nil event") }
+	if err != nil {
+		t.Fatalf("ReadEvent 2 failed: %v", err)
+	}
+	if e == nil {
+		t.Fatal("ReadEvent 2 returned nil event")
+	}
 	if e.Type != FocusEventType || e.SetFocus {
 		t.Errorf("Expected Focus OUT, got %+v", e)
 	}
@@ -713,16 +721,24 @@ func TestReadEvent_Paste(t *testing.T) {
 
 	// Check Paste Start
 	e, err := r.ReadEvent()
-	if err != nil { t.Fatalf("ReadEvent 1 failed: %v", err) }
-	if e == nil { t.Fatal("ReadEvent 1 returned nil event") }
+	if err != nil {
+		t.Fatalf("ReadEvent 1 failed: %v", err)
+	}
+	if e == nil {
+		t.Fatal("ReadEvent 1 returned nil event")
+	}
 	if e.Type != PasteEventType || !e.PasteStart {
 		t.Errorf("Expected Paste START, got %+v", e)
 	}
 
 	// Check Paste End
 	e, err = r.ReadEvent()
-	if err != nil { t.Fatalf("ReadEvent 2 failed: %v", err) }
-	if e == nil { t.Fatal("ReadEvent 2 returned nil event") }
+	if err != nil {
+		t.Fatalf("ReadEvent 2 failed: %v", err)
+	}
+	if e == nil {
+		t.Fatal("ReadEvent 2 returned nil event")
+	}
 	if e.Type != PasteEventType || e.PasteStart {
 		t.Errorf("Expected Paste END, got %+v", e)
 	}
@@ -739,7 +755,7 @@ func TestReadEvent_Fallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadEvent failed: %v", err)
 	}
-	if e.VirtualKeyCode != VK_TAB || (e.ControlKeyState & ShiftPressed) == 0 {
+	if e.VirtualKeyCode != VK_TAB || (e.ControlKeyState&ShiftPressed) == 0 {
 		t.Errorf("Expected Shift+Tab via fallback, got %+v", e)
 	}
 }
@@ -769,56 +785,72 @@ func TestReadEvent_Mixed(t *testing.T) {
 
 	// Check Ctrl+C
 	e, err := r.ReadEvent()
-	if err != nil || e == nil { t.Fatalf("Ctrl+C read failed: %v", err) }
+	if err != nil || e == nil {
+		t.Fatalf("Ctrl+C read failed: %v", err)
+	}
 	if e.VirtualKeyCode != VK_C || (e.ControlKeyState&LeftCtrlPressed) == 0 {
 		t.Errorf("Expected Ctrl+C, got %+v", e)
 	}
 
 	// Check Shift+Tab
 	e, err = r.ReadEvent()
-	if err != nil || e == nil { t.Fatalf("Shift+Tab read failed: %v", err) }
+	if err != nil || e == nil {
+		t.Fatalf("Shift+Tab read failed: %v", err)
+	}
 	if e.VirtualKeyCode != VK_TAB || (e.ControlKeyState&ShiftPressed) == 0 {
 		t.Errorf("Expected Shift+Tab, got %+v", e)
 	}
 
 	// Check Double ESC
 	e, err = r.ReadEvent()
-	if err != nil || e == nil { t.Fatalf("Double ESC read failed: %v", err) }
+	if err != nil || e == nil {
+		t.Fatalf("Double ESC read failed: %v", err)
+	}
 	if e.VirtualKeyCode != VK_ESCAPE {
 		t.Errorf("Expected VK_ESCAPE from double ESC, got %+v", e)
 	}
 
 	// Check Ctrl+Space
 	e, err = r.ReadEvent()
-	if err != nil || e == nil { t.Fatalf("Ctrl+Space read failed: %v", err) }
+	if err != nil || e == nil {
+		t.Fatalf("Ctrl+Space read failed: %v", err)
+	}
 	if e.VirtualKeyCode != VK_SPACE || (e.ControlKeyState&LeftCtrlPressed) == 0 {
 		t.Errorf("Expected Ctrl+Space, got %+v", e)
 	}
 
 	// Check Ctrl+\
 	e, err = r.ReadEvent()
-	if err != nil || e == nil { t.Fatalf("Ctrl+\\ read failed: %v", err) }
+	if err != nil || e == nil {
+		t.Fatalf("Ctrl+\\ read failed: %v", err)
+	}
 	if e.VirtualKeyCode != VK_OEM_5 || (e.ControlKeyState&LeftCtrlPressed) == 0 {
 		t.Errorf("Expected Ctrl+\\, got %+v", e)
 	}
 
 	// Check Ctrl+H (Backspace)
 	e, err = r.ReadEvent()
-	if err != nil || e == nil { t.Fatalf("Ctrl+H read failed: %v", err) }
+	if err != nil || e == nil {
+		t.Fatalf("Ctrl+H read failed: %v", err)
+	}
 	if e.VirtualKeyCode != VK_BACK {
 		t.Errorf("Expected VK_BACK from 0x08, got %+v", e)
 	}
 
 	// Check Ctrl+^
 	e, err = r.ReadEvent()
-	if err != nil || e == nil { t.Fatalf("Ctrl+^ read failed: %v", err) }
+	if err != nil || e == nil {
+		t.Fatalf("Ctrl+^ read failed: %v", err)
+	}
 	if e.VirtualKeyCode != VK_6 {
 		t.Errorf("Expected VK_6 from 0x1E, got %+v", e)
 	}
 
 	// Check Ctrl+_
 	e, err = r.ReadEvent()
-	if err != nil || e == nil { t.Fatalf("Ctrl+_ read failed: %v", err) }
+	if err != nil || e == nil {
+		t.Fatalf("Ctrl+_ read failed: %v", err)
+	}
 	if e.VirtualKeyCode != VK_OEM_MINUS {
 		t.Errorf("Expected VK_OEM_MINUS from 0x1F, got %+v", e)
 	}
@@ -933,10 +965,10 @@ func TestReadEvent_ArkanoidFix(t *testing.T) {
 }
 
 func TestReadEvent_Win32PulverizedSequence(t *testing.T) {
-	// Симулируем ситуацию, когда ConPTY в Windows разбивает ответ терминала \x1b[0n 
+	// Симулируем ситуацию, когда ConPTY в Windows разбивает ответ терминала \x1b[0n
 	// на отдельные события нажатия клавиш без VK кода.
 	r := NewReader(bytes.NewReader(nil))
-	// На Windows NewReader создает NativeEventChan. Если мы на другой ОС, 
+	// На Windows NewReader создает NativeEventChan. Если мы на другой ОС,
 	// нам нужно создать его вручную для теста.
 	if r.NativeEventChan == nil {
 		r.NativeEventChan = make(chan *InputEvent, 10)

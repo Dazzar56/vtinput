@@ -52,7 +52,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			return nil, nil // Timeout
 		case ev := <-r.NativeEventChan:
 			Log("READER_TRACE: Recv NativeEvent: %s", ev.String())
-			// FIX: Apply VK=0 buffering ONLY to ConPTY (Windows). 
+			// FIX: Apply VK=0 buffering ONLY to ConPTY (Windows).
 			// Native X11 events must go straight to the app to avoid byte truncation.
 			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
 				if ev.KeyDown {
@@ -170,7 +170,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					if event, consumed, err := ParseMouseSGR(parseBuf); err == nil {
 						Log("Reader: ParseMouseSGR successful.")
 						r.buf = r.buf[consumed+altOffset:]
-						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						if altOffset > 0 {
+							event.ControlKeyState |= LeftAltPressed
+						}
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -183,7 +185,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					if event, consumed, err := ParseMouseLegacy(parseBuf); err == nil {
 						Log("Reader: ParseMouseLegacy successful.")
 						r.buf = r.buf[consumed+altOffset:]
-						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						if altOffset > 0 {
+							event.ControlKeyState |= LeftAltPressed
+						}
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -197,7 +201,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						if event, consumed, err := ParseMouseURXVT(parseBuf); err == nil {
 							Log("Reader: ParseMouseURXVT successful.")
 							r.buf = r.buf[consumed+altOffset:]
-							if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+							if altOffset > 0 {
+								event.ControlKeyState |= LeftAltPressed
+							}
 							return event, nil
 						}
 					} else if err == ErrIncomplete {
@@ -211,7 +217,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					if event, consumed, err := ParseLegacySS3(parseBuf); err == nil {
 						Log("Reader: ParseLegacySS3 successful.")
 						r.buf = r.buf[consumed+altOffset:]
-						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						if altOffset > 0 {
+							event.ControlKeyState |= LeftAltPressed
+						}
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -260,7 +268,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 
 						if pErr == nil && event != nil {
 							r.buf = r.buf[consumed+altOffset:]
-							if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+							if altOffset > 0 {
+								event.ControlKeyState |= LeftAltPressed
+							}
 							Log("Reader: Returning CSI event: %s", event.String())
 							return event, nil
 						} else if pErr == ErrInvalidSequence {
@@ -343,7 +353,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					continue
 				}
 			}
-			
+
 			// Handle standalone BACK (0x7F)
 			if r.buf[0] == 0x7F {
 				r.buf = r.buf[1:]
@@ -370,7 +380,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				}
 				return &InputEvent{Type: KeyEventType, Char: character, KeyDown: true, IsLegacy: true, InputSource: "legacy_char", RepeatCount: 1}, nil
 			}
-		}	
+		}
 
 		select {
 		case ev := <-r.NativeEventChan:
