@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 	"time"
@@ -24,6 +23,9 @@ var (
 	logLines    []string
 	logLimit    = 20
 	currentMods vtinput.ControlKeyState
+	lastLatency time.Duration
+	avgLatency  time.Duration
+	eventCount  int64
 )
 
 const (
@@ -51,6 +53,7 @@ func main() {
 	useKitty := flag.Bool("kitty", true, "Enable Kitty Keyboard Protocol")
 	useMouse := flag.Bool("mouse", true, "Enable Mouse Support")
 	useExt := flag.Bool("ext", true, "Enable Focus and Bracketed Paste")
+	useFar2l := flag.Bool("far2l", true, "Enable far2l terminal extensions ")
 	flag.Parse()
 
 	var mask vtinput.Protocol
@@ -66,6 +69,9 @@ func main() {
 	if *useExt {
 		mask |= vtinput.FocusAndPaste
 	}
+	if *useFar2l {
+		mask |= vtinput.Far2lExtensions
+	}
 
 	restore, err := vtinput.EnableProtocols(mask)
 	if err != nil {
@@ -79,6 +85,8 @@ func main() {
 	defer fmt.Print("\033[?25h") // Show cursor on exit
 
 	reader := vtinput.NewReader(os.Stdin)
+	reader.MetricsEnabled = true
+	defer reader.Close()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -86,24 +94,13 @@ func main() {
 	drawUI()
 
 	// Event channel to bridge reader and select loop
-	eventChan := make(chan *vtinput.InputEvent)
-	go func() {
-		for {
-			e, err := reader.ReadEvent()
-			if err != nil {
-				if err != io.EOF {
-					// In a real app we might handle error, here just exit loop
-				}
-				return
-			}
-			eventChan <- e
-		}
-	}()
+	eventChan := reader.EventChan()
 
 	for {
 		select {
 		case e := <-eventChan:
 			handleEvent(e)
+			lastLatency, avgLatency, eventCount = reader.Metrics()
 			if isExitEvent(e) {
 				return
 			}
@@ -209,7 +206,8 @@ func drawUI() {
 	// Move to top-left
 	fmt.Print("\033[H")
 
-	fmt.Print("--- vtinput input visualizer (press Ctrl+C/Esc to exit) ---\r\n\r\n")
+	fmt.Printf("--- vtinput input visualizer (press Ctrl+C/Esc to exit) ---\r\n\r\n")
+	fmt.Printf("Last: %v  Avg: %v  (N=%d)\r\n\r\n", lastLatency, avgLatency, eventCount)
 
 	// Determine if we have specific shift keys pressed to avoid generic modifier fallback
 	shiftInMap := false

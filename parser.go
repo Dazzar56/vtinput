@@ -163,7 +163,7 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 	if strings.HasPrefix(paramStr, "f2l") {
 		b64 = strings.TrimPrefix(paramStr, "f2l")
 		b64 = strings.TrimPrefix(b64, ":")
-		event = &InputEvent{Type: Far2lEventType, Far2lCommand: "event"}
+		event = &InputEvent{Type: Far2lEventType, Far2lCommand: "event", InputSource: "far2l"}
 	} else if strings.HasPrefix(paramStr, "far2l") {
 		content := strings.TrimPrefix(paramStr, "far2l")
 		if content == "" {
@@ -171,15 +171,15 @@ func ParseFar2lAPC(data []byte) (*InputEvent, int, error) {
 		}
 		switch content {
 		case "1":
-			return &InputEvent{Type: Far2lEventType, Far2lCommand: "enable"}, terminatorIdx + 1, nil
+			return &InputEvent{Type: Far2lEventType, Far2lCommand: "enable", InputSource: "far2l"}, terminatorIdx + 1, nil
 		case "0":
-			return &InputEvent{Type: Far2lEventType, Far2lCommand: "disable"}, terminatorIdx + 1, nil
+			return &InputEvent{Type: Far2lEventType, Far2lCommand: "disable", InputSource: "far2l"}, terminatorIdx + 1, nil
 		case "ok":
-			return &InputEvent{Type: Far2lEventType, Far2lCommand: "ok"}, terminatorIdx + 1, nil
+			return &InputEvent{Type: Far2lEventType, Far2lCommand: "ok", InputSource: "far2l"}, terminatorIdx + 1, nil
 		}
 
 		b64 = strings.TrimPrefix(content, ":")
-		event = &InputEvent{Type: Far2lEventType, Far2lCommand: "reply"}
+		event = &InputEvent{Type: Far2lEventType, Far2lCommand: "reply", InputSource: "far2l"}
 		// If it has a colon, it's an interaction request from remote to us
 		if strings.HasPrefix(content, ":") {
 			event.Far2lCommand = "interact"
