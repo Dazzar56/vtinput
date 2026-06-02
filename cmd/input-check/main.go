@@ -91,10 +91,12 @@ func main() {
 		rs = vtinput.NewReaderSync(os.Stdin)
 		rs.MetricsEnabled = true
 		reader = rs
+		syncMode = "Sync mode"
 	} else {
 		r = vtinput.NewReader(os.Stdin)
 		r.MetricsEnabled = true
 		reader = r
+		syncMode = "Async mode"
 	}
 	defer reader.Close()
 	ticker := time.NewTicker(50 * time.Millisecond)
