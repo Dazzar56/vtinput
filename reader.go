@@ -144,11 +144,12 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						event := &InputEvent{Type: FocusEventType, SetFocus: parseBuf[2] == 'I'}
 						r.buf = r.buf[3+altOffset:]
 						r.recordLatency(time.Since(r.lastReceivedAt))
+						Log("Reader: Parsed Focus %v.", event.SetFocus)
 						return event, nil
 					}
 				}
 
-				// 2. DSR Replies
+				// 2. DSR Replies (ESC [ ... n)
 				if len(parseBuf) > 2 && parseBuf[1] == '[' {
 					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil {
 						if cmd == 'n' {
@@ -169,6 +170,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 								r.far2lExtensionsEnabled = true
 							}
 							r.recordLatency(time.Since(r.lastReceivedAt))
+							Log("Reader: Parsed far2l event: %s", event.String())
 							return event, nil
 						}
 						continue
@@ -177,7 +179,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
-				// 4. Bracketed Paste
+				// 4. Bracketed Paste (ESC [ 2 0 0 ~ / ESC [ 2 0 1 ~)
 				if len(parseBuf) >= 6 && parseBuf[1] == '[' && parseBuf[2] == '2' && parseBuf[3] == '0' && (parseBuf[4] == '0' || parseBuf[4] == '1') && parseBuf[5] == '~' {
 					event := &InputEvent{Type: PasteEventType, PasteStart: parseBuf[4] == '0'}
 					r.buf = r.buf[6+altOffset:]
@@ -199,7 +201,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
-				// 5.5. Legacy Mouse
+				// 5.5. Legacy Mouse (ESC [ M Cb Cx Cy)
 				if len(parseBuf) >= 3 && parseBuf[1] == '[' && parseBuf[2] == 'M' {
 					if event, consumed, err := ParseMouseLegacy(parseBuf); err == nil {
 						r.buf = r.buf[consumed+altOffset:]
@@ -213,7 +215,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
-				// 5.6. URXVT Mouse
+				// 5.6. URXVT Mouse (ESC [ Cb ; Cx ; Cy M)
 				if len(parseBuf) > 3 && parseBuf[1] == '[' {
 					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil && cmd == 'M' && terminatorIdx > 2 {
 						if event, consumed, err := ParseMouseURXVT(parseBuf); err == nil {
@@ -229,7 +231,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
-				// 6. SS3 Sequences
+				// 6. SS3 Sequences (ESC O ... or broken VTE ESC [ O ...)
 				if (len(parseBuf) > 1 && parseBuf[1] == 'O') || (len(parseBuf) > 2 && parseBuf[1] == '[' && parseBuf[2] == 'O') {
 					if event, consumed, err := ParseLegacySS3(parseBuf); err == nil {
 						r.buf = r.buf[consumed+altOffset:]
@@ -243,7 +245,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
-				// 6.5. DA
+				// 6.5. DA (Device Attributes) - consume \x1b[?...c
 				if len(parseBuf) > 2 && parseBuf[1] == '[' && parseBuf[2] == '?' {
 					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil && cmd == 'c' {
 						r.buf = r.buf[terminatorIdx+1+altOffset:]
@@ -253,7 +255,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 
-				// 7. Other CSI Sequences
+				// 7. Other CSI Sequences (Legacy, Win32, Kitty)
 				if len(parseBuf) > 1 && parseBuf[1] == '[' {
 					if terminatorIdx, cmd, err := scanCSI(parseBuf); err == nil {
 						var event *InputEvent
@@ -268,6 +270,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						}
 
 						if pErr == ErrInvalidSequence || event == nil {
+							// Modern sequences (Win32/Kitty) are always allowed, even if
+							// Far2l is on, because they don't collide and are used for
+							// high-precision input in nested sessions.
 							if cmd == '_' {
 								event, consumed, pErr = ParseWin32InputEvent(parseBuf)
 							} else {
@@ -281,6 +286,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 								event.ControlKeyState |= LeftAltPressed
 							}
 							r.recordLatency(time.Since(r.lastReceivedAt))
+							Log("Reader: Returning CSI event: %s", event.String())
 							return event, nil
 						} else if pErr == ErrInvalidSequence {
 							r.buf = r.buf[terminatorIdx+1+altOffset:]
@@ -298,7 +304,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_ESCAPE, KeyDown: true, InputSource: "legacy_esc"}, nil
 				}
 
-				// 9. Legacy Alt
+				// 9. Legacy Alt (ESC + Char)
 				if len(r.buf) >= 2 && utf8.FullRune(r.buf[1:]) {
 					r.buf = r.buf[1:]
 					character, size := utf8.DecodeRune(r.buf)
@@ -360,8 +366,12 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			if utf8.FullRune(r.buf) {
 				character, size := utf8.DecodeRune(r.buf)
 				consumed := size
+
+				// Far2l workaround: some versions of far2l's terminal emulator
+				// send an extra space after the '=' character.
 				if character == '=' && len(r.buf) > size && r.buf[size] == ' ' {
 					consumed++
+					Log("Reader: Applied Far2l '=' workaround, consumed extra space.")
 				}
 				r.buf = r.buf[consumed:]
 				if event := translateLegacyByte(character); event != nil {

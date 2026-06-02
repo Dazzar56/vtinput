@@ -206,7 +206,7 @@ func drawUI() {
 	// Move to top-left
 	fmt.Print("\033[H")
 
-	fmt.Printf("--- vtinput input visualizer (press Ctrl+C/Esc to exit)\r\n")
+	fmt.Printf("--- vtinput input visualizer (press Ctrl+C/Esc to exit) ---\r\n\r\n")
 	fmt.Printf("Last: %v  Avg: %v  (N=%d)\r\n\r\n", lastLatency, avgLatency, eventCount)
 
 	// Determine if we have specific shift keys pressed to avoid generic modifier fallback

@@ -38,8 +38,20 @@ func (r *Reader) platformInit(in io.Reader) {
 				r.oldMode = mode
 				r.useConPTY = true
 
+
+
+				// We need to set some flags and, crucially, CLEAR others that interfere with raw input.
+				// Set: WINDOW_INPUT (0x8), MOUSE_INPUT (0x10), EXTENDED_FLAGS (0x80)
 				newMode := mode | 0x0008 | 0x0010 | 0x0080
+						
+				// Clear:
+				// 0x0001: PROCESSED_INPUT (to get raw Ctrl+C)
+				// 0x0002: LINE_INPUT (get keys immediately)
+				// 0x0004: ECHO_INPUT
+				// 0x0040: QUICK_EDIT_MODE (to allow mouse events instead of selection)
+				// 0x0200: VIRTUAL_TERMINAL_INPUT (CRITICAL: if this is ON, ReadConsoleInputW gets no keys!)
 				newMode &^= (0x0001 | 0x0002 | 0x0004 | 0x0040 | 0x0200)
+
 				if err := windows.SetConsoleMode(handle, newMode); err != nil {
 					Log("Reader: ConPTY SetConsoleMode failure: %v", err)
 				}
