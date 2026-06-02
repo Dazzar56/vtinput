@@ -11,102 +11,87 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func NewReader(in io.Reader) *Reader {
-	r := &Reader{
-		in:              in,
-		buf:             make([]byte, 0, 128),
-		dataChan:        make(chan timedChunk, 16),
-		NativeEventChan: nil, //таких эвентов на линуксе нет, так что память не тратим
-		errChan:         make(chan error, 1),
-		done:            make(chan struct{}),
-	}
+func (r *Reader) platformInit(_ io.Reader) {
+	syscall.Pipe(r.stopPipe[:])
+}
 
-	if err := syscall.Pipe(r.stopPipe[:]); err != nil {
-		return r
-	}
-
-	var fd int
-	isAFile := false
-	if f, ok := in.(*os.File); ok {
-		fd = int(f.Fd())
-		isAFile = true
-	}
-
-	go func() {
-		defer syscall.Close(r.stopPipe[0])
-		tmp := make([]byte, 1024)
-
-		for {
-			if isAFile {
-				// Advanced logic for real terminals (session resurrection support)
-				fds := []unix.PollFd{
-					{Fd: int32(fd), Events: unix.POLLIN},
-					{Fd: int32(r.stopPipe[0]), Events: unix.POLLIN},
-				}
-
-				_, err := unix.Poll(fds, -1)
-				if err != nil {
-					if err == unix.EINTR { continue }
-					r.errChan <- err
-					return
-				}
-
-				if fds[1].Revents != 0 {
-					return
-				}
-
-				n, err := syscall.Read(fd, tmp)
-				if n > 0 {
-					buf := make([]byte, n)
-					copy(buf, tmp[:n])
-					var at time.Time
-					if r.MetricsEnabled {
-						at = time.Now()
-					}
-					r.dataChan <- timedChunk{buf, at}
-				}
-
-				if err != nil {
-					Log("Reader(syscall): Read error: %v", err)
-				}
-				if err != nil {
-					if err == syscall.EAGAIN || err == syscall.EINTR { continue }
-					r.errChan <- err
-					return
-				}
-				if n == 0 {
-					r.errChan <- io.EOF
-					return
-				}
-			} else {
-				// Fallback for tests (pipes, buffers)
-				select {
-				case <-r.done:
-					return
-				default:
-					n, err := in.Read(tmp)
-					if n > 0 {
-						buf := make([]byte, n)
-						copy(buf, tmp[:n])
-						var at time.Time
-						if r.MetricsEnabled {
-							at = time.Now()
-						}
-						r.dataChan <- timedChunk{buf, at}
-					}
-					if err != nil {
-						r.errChan <- err
-						return
-					}
-				}
-			}
-		}
-	}()
-
-	return r
+func (r *Reader) readConPTYEventTimeout(_ time.Duration) (*InputEvent, error) {
+	return nil, nil
 }
 
 func (r *Reader) platformClose() {
 	syscall.Write(r.stopPipe[1], []byte{0})
 	syscall.Close(r.stopPipe[1])
+}
+
+func (r *Reader) readBytes(buf []byte, timeout time.Duration) (int, error) {
+	var fd int
+	isFile := false
+	if f, ok := r.in.(*os.File); ok {
+		fd = int(f.Fd())
+		isFile = true
+	}
+
+	if !isFile {
+		// For non-file readers (tests), use standard Read with optional deadline.
+		if timeout > 0 {
+			if d, ok := r.in.(interface{ SetReadDeadline(time.Time) error }); ok {
+				d.SetReadDeadline(time.Now().Add(timeout))
+				defer d.SetReadDeadline(time.Time{})
+			}
+		}
+		n, err := r.in.Read(buf)
+		if n > 0 {
+			if r.MetricsEnabled {
+				r.lastReceivedAt = time.Now()
+			}
+		}
+		return n, err
+	}
+
+	fds := []unix.PollFd{
+		{Fd: int32(fd), Events: unix.POLLIN},
+		{Fd: int32(r.stopPipe[0]), Events: unix.POLLIN},
+	}
+
+	pollTimeout := -1
+	if timeout > 0 {
+		ms := int(timeout.Milliseconds())
+		if ms > 0 {
+			pollTimeout = ms
+		}
+	}
+
+	_, err := unix.Poll(fds, pollTimeout)
+	if err != nil {
+		if err == unix.EINTR {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	if fds[1].Revents != 0 {
+		return 0, io.EOF
+	}
+
+	if fds[0].Revents&unix.POLLIN == 0 {
+		return 0, nil // timeout
+	}
+
+	n, err := syscall.Read(fd, buf)
+	if n > 0 {
+		if r.MetricsEnabled {
+			r.lastReceivedAt = time.Now()
+		}
+	}
+	if err != nil {
+		if err == syscall.EAGAIN || err == syscall.EINTR {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if n == 0 {
+		return 0, io.EOF
+	}
+	return n, nil
 }

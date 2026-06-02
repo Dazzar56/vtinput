@@ -65,7 +65,6 @@ func main() {
 	useMouse := flag.Bool("mouse", true, "Enable Mouse Support")
 	useExt   := flag.Bool("ext", true, "Enable Focus and Bracketed Paste")
 	useFar2l := flag.Bool("far2l", true, "Enable far2l terminal extensions ")
-	useSync  := flag.Bool("sync", false, "Use synchronous reader (ReaderSync)")
 	flag.Parse()
 
 	var mask vtinput.Protocol
@@ -86,20 +85,9 @@ func main() {
 	fmt.Print("\033[2J\033[?25l")
 	defer fmt.Print("\033[?25h") // Show cursor on exit
 
-	var r *vtinput.Reader
-	var rs *vtinput.ReaderSync
-	var reader eventReader
-	if *useSync {
-		rs = vtinput.NewReaderSync(os.Stdin)
-		rs.MetricsEnabled = true
-		reader = rs
-		syncMode = "Sync mode"
-	} else {
-		r = vtinput.NewReader(os.Stdin)
-		r.MetricsEnabled = true
-		reader = r
-		syncMode = "Async mode"
-	}
+	reader := vtinput.NewReader(os.Stdin)
+	reader.MetricsEnabled = true
+	syncMode = "Sync mode"
 	defer reader.Close()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
@@ -114,9 +102,7 @@ func main() {
 		select {
 		case e := <-eventChan:
 			handleEvent(e)
-			if mr, ok := reader.(metricsReader); ok {
-				lastLatency, avgLatency, eventCount = mr.Metrics()
-			}
+			lastLatency, avgLatency, eventCount = reader.Metrics()
 			if isExitEvent(e) {
 				return
 			}
