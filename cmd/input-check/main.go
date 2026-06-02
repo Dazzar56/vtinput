@@ -26,18 +26,7 @@ var (
 	lastLatency time.Duration
 	avgLatency  time.Duration
 	eventCount  int64
-	syncMode    string
 )
-
-type metricsReader interface {
-	Metrics() (time.Duration, time.Duration, int64)
-}
-
-type eventReader interface {
-	ReadEvent() (*vtinput.InputEvent, error)
-	Close()
-	EventChan() <-chan *vtinput.InputEvent
-}
 
 const (
 	_f1   = 0xFF00 + 7
@@ -87,7 +76,6 @@ func main() {
 
 	reader := vtinput.NewReader(os.Stdin)
 	reader.MetricsEnabled = true
-	syncMode = "Sync mode"
 	defer reader.Close()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
@@ -208,7 +196,7 @@ func drawUI() {
 	// Move to top-left
 	fmt.Print("\033[H")
 
-	fmt.Printf("--- vtinput input visualizer (press Ctrl+C/Esc to exit) --- [%s]\r\n", syncMode)
+	fmt.Printf("--- vtinput input visualizer (press Ctrl+C/Esc to exit)\r\n",)
 	fmt.Printf("Last: %v  Avg: %v  (N=%d)\r\n\r\n", lastLatency, avgLatency, eventCount)
 
 	// Determine if we have specific shift keys pressed to avoid generic modifier fallback
