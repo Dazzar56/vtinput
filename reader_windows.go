@@ -24,8 +24,8 @@ func NewReader(in io.Reader) *Reader {
 	r := &Reader{
 		in:              in,
 		buf:             make([]byte, 0, 128),
-		dataChan:        make(chan []byte, 16),
-		NativeEventChan: make(chan *InputEvent, 1024),
+		dataChan:        make(chan timedChunk, 16),
+		NativeEventChan: make(chan timedEvent, 1024),
 		errChan:         make(chan error, 1),
 		done:            make(chan struct{}),
 	}
@@ -47,6 +47,7 @@ func NewReader(in io.Reader) *Reader {
 			if err := windows.GetConsoleMode(handle, &mode); err == nil {
 				Log("Reader: Successfully identified console handle (FD %d). Mode: 0x%X", f.Fd(), mode)
 				Log("Reader: Starting ConPTY loop for native event queue")
+				r.conHandle = uintptr(handle)
 				go r.conPTYLoop(handle)
 				return r
 			} else {
@@ -74,7 +75,11 @@ func (r *Reader) ansiLoop() {
 			if n > 0 {
 				buf := make([]byte, n)
 				copy(buf, tmp[:n])
-				r.dataChan <- buf
+				var at time.Time
+				if r.MetricsEnabled {
+					at = time.Now()
+				}
+				r.dataChan <- timedChunk{buf, at}
 			}
 			if err != nil {
 				r.errChan <- err
@@ -152,7 +157,11 @@ func (r *Reader) conPTYLoop(handle windows.Handle) {
 					ControlKeyState: ControlKeyState(binary.LittleEndian.Uint32(rec.Event[12:16])),
 					InputSource:     "ConPTY",
 				}
-				r.NativeEventChan <- ev
+				var at time.Time
+				if r.MetricsEnabled {
+					at = time.Now()
+				}
+				r.NativeEventChan <- timedEvent{ev, at}
 
 			case 0x0002: // MOUSE_EVENT
 				ev := &InputEvent{
@@ -173,14 +182,26 @@ func (r *Reader) conPTYLoop(handle windows.Handle) {
 						ev.WheelDirection = -1
 					}
 				}
-				r.NativeEventChan <- ev
+				var at time.Time
+				if r.MetricsEnabled {
+					at = time.Now()
+				}
+				r.NativeEventChan <- timedEvent{ev, at}
 
 			case 0x0004: // WINDOW_BUFFER_SIZE_EVENT
-				r.NativeEventChan <- &InputEvent{Type: ResizeEventType, InputSource: "ConPTY"}
+				var at time.Time
+				if r.MetricsEnabled {
+					at = time.Now()
+				}
+				r.NativeEventChan <- timedEvent{&InputEvent{Type: ResizeEventType, InputSource: "ConPTY"}, at}
 
 			case 0x0010: // FOCUS_EVENT
 				setFocus := binary.LittleEndian.Uint32(rec.Event[0:4]) > 0
-				r.NativeEventChan <- &InputEvent{Type: FocusEventType, SetFocus: setFocus, InputSource: "ConPTY"}
+				var at time.Time
+				if r.MetricsEnabled {
+					at = time.Now()
+				}
+				r.NativeEventChan <- timedEvent{&InputEvent{Type: FocusEventType, SetFocus: setFocus, InputSource: "ConPTY"}, at}
 
 			default:
 				// Log other events like MENU_EVENT (0x0008)
@@ -191,7 +212,9 @@ func (r *Reader) conPTYLoop(handle windows.Handle) {
 }
 
 func (r *Reader) platformClose() {
-	// Revert to relying on done channel
+	if r.conHandle != 0 {
+		windows.CancelIoEx(windows.Handle(r.conHandle), nil)
+	}
 }
 
 func highWord(data uint32) uint16 {

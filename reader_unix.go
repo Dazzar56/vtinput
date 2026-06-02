@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -14,7 +15,7 @@ func NewReader(in io.Reader) *Reader {
 	r := &Reader{
 		in:              in,
 		buf:             make([]byte, 0, 128),
-		dataChan:        make(chan []byte, 16),
+		dataChan:        make(chan timedChunk, 16),
 		NativeEventChan: nil, //таких эвентов на линуксе нет, так что память не тратим
 		errChan:         make(chan error, 1),
 		done:            make(chan struct{}),
@@ -58,7 +59,11 @@ func NewReader(in io.Reader) *Reader {
 				if n > 0 {
 					buf := make([]byte, n)
 					copy(buf, tmp[:n])
-					r.dataChan <- buf
+					var at time.Time
+					if r.MetricsEnabled {
+						at = time.Now()
+					}
+					r.dataChan <- timedChunk{buf, at}
 				}
 
 				if err != nil {
@@ -83,7 +88,11 @@ func NewReader(in io.Reader) *Reader {
 					if n > 0 {
 						buf := make([]byte, n)
 						copy(buf, tmp[:n])
-						r.dataChan <- buf
+						var at time.Time
+						if r.MetricsEnabled {
+							at = time.Now()
+						}
+						r.dataChan <- timedChunk{buf, at}
 					}
 					if err != nil {
 						r.errChan <- err

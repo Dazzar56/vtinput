@@ -939,18 +939,19 @@ func TestReadEvent_Win32PulverizedSequence(t *testing.T) {
 	// На Windows NewReader создает NativeEventChan. Если мы на другой ОС, 
 	// нам нужно создать его вручную для теста.
 	if r.NativeEventChan == nil {
-		r.NativeEventChan = make(chan *InputEvent, 10)
+		r.NativeEventChan = make(chan timedEvent, 10)
 	}
 
 	// Отправляем последовательность по одному символу
 	// Важно: ставим KeyDown: true, чтобы Reader не отфильтровал их как KeyUp
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 0x1B, KeyDown: true, InputSource: "ConPTY"}
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '[', KeyDown: true, InputSource: "ConPTY"}
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '0', KeyDown: true, InputSource: "ConPTY"}
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 'n', KeyDown: true, InputSource: "ConPTY"}
+	now := time.Now()
+	r.NativeEventChan <- timedEvent{&InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 0x1B, KeyDown: true, InputSource: "ConPTY"}, now}
+	r.NativeEventChan <- timedEvent{&InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '[', KeyDown: true, InputSource: "ConPTY"}, now}
+	r.NativeEventChan <- timedEvent{&InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: '0', KeyDown: true, InputSource: "ConPTY"}, now}
+	r.NativeEventChan <- timedEvent{&InputEvent{Type: KeyEventType, VirtualKeyCode: 0, Char: 'n', KeyDown: true, InputSource: "ConPTY"}, now}
 
 	// Добавляем реальную клавишу в конце, чтобы ReadEvent не заблокировался навсегда
-	r.NativeEventChan <- &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_A, Char: 'a', KeyDown: true}
+	r.NativeEventChan <- timedEvent{&InputEvent{Type: KeyEventType, VirtualKeyCode: VK_A, Char: 'a', KeyDown: true}, now}
 
 	// ReadEvent должен "проглотить" [0n и вернуть сразу 'a'
 	evt, err := r.ReadEventTimeout(500 * time.Millisecond)

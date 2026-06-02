@@ -2,21 +2,45 @@ package vtinput
 
 import (
 	"io"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
 
 // Reader wraps an io.Reader (like os.Stdin) and parses input events.
 // It buffers input internally to handle incomplete escape sequences.
+type timedChunk struct {
+	data []byte
+	at   time.Time
+}
+
+type timedEvent struct {
+	event *InputEvent
+	at    time.Time
+}
+
 type Reader struct {
 	in                     io.Reader
 	buf                    []byte
-	dataChan               chan []byte
-	NativeEventChan        chan *InputEvent
+	dataChan               chan timedChunk
+	NativeEventChan        chan timedEvent
 	errChan                chan error
 	done                   chan struct{}
 	stopPipe               [2]int // Used on Unix for Select unblocking
 	far2lExtensionsEnabled bool
+	conHandle              uintptr // Windows: console handle for CancelIoEx
+
+	mu             sync.Mutex
+	lastLatency    time.Duration
+	totalLatency   time.Duration
+	eventCount     int64
+	lastReceivedAt time.Time
+
+	eventChan  chan *InputEvent
+	stopRead   chan struct{}
+	onceStop   sync.Once
+
+	MetricsEnabled bool
 }
 
 // Close stops the background reading goroutine instantly.
@@ -28,6 +52,40 @@ func (r *Reader) Close() {
 		close(r.done)
 		r.platformClose()
 	}
+	if r.stopRead != nil {
+		r.onceStop.Do(func() { close(r.stopRead) })
+	}
+}
+
+// EventChan returns a channel that yields input events.
+// It starts a background goroutine that calls ReadEvent() in a loop.
+// The channel is closed when the reader is closed or an error occurs.
+func (r *Reader) EventChan() <-chan *InputEvent {
+	if r.eventChan != nil {
+		return r.eventChan
+	}
+	r.eventChan = make(chan *InputEvent, 1024)
+	r.stopRead = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-r.stopRead:
+				return
+			default:
+			}
+			e, err := r.ReadEvent()
+			if err != nil {
+				r.onceStop.Do(func() { close(r.eventChan) })
+				return
+			}
+			select {
+			case r.eventChan <- e:
+			case <-r.stopRead:
+				return
+			}
+		}
+	}()
+	return r.eventChan
 }
 
 // ReadEvent reads the next input event.
@@ -50,9 +108,11 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 			return nil, io.EOF
 		case <-timer:
 			return nil, nil // Timeout
-		case ev := <-r.NativeEventChan:
+		case te := <-r.NativeEventChan:
+			ev := te.event
+			r.lastReceivedAt = te.at
 			Log("READER_TRACE: Recv NativeEvent: %s", ev.String())
-			// FIX: Apply VK=0 buffering ONLY to ConPTY (Windows). 
+			// FIX: Apply VK=0 buffering ONLY to ConPTY (Windows).
 			// Native X11 events must go straight to the app to avoid byte truncation.
 			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
 				if ev.KeyDown {
@@ -64,6 +124,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				continue
 			}
 			Log("Reader[%p]: Returning native event: %s", r, ev.String())
+			r.recordLatency(time.Since(r.lastReceivedAt))
 			return ev, nil
 		default:
 		}
@@ -72,7 +133,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 	greedy:
 		for {
 			select {
-			case ev := <-r.NativeEventChan:
+			case te := <-r.NativeEventChan:
+				ev := te.event
+				r.lastReceivedAt = te.at
 				if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
 					if ev.KeyDown {
 						Log("READER_TRACE: (greedy) VK is 0, ENQUEUEING Char '%c' (%d) to buf. Current buf: %q", ev.Char, ev.Char, string(r.buf))
@@ -84,9 +147,11 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					}
 				}
 				Log("Reader: Returning native event: %s", ev.String())
+				r.recordLatency(time.Since(r.lastReceivedAt))
 				return ev, nil
-			case b := <-r.dataChan:
-				r.buf = append(r.buf, b...)
+			case tc := <-r.dataChan:
+				r.lastReceivedAt = tc.at
+				r.buf = append(r.buf, tc.data...)
 			default:
 				break greedy
 			}
@@ -118,6 +183,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						event := &InputEvent{Type: FocusEventType, SetFocus: parseBuf[2] == 'I'}
 						r.buf = r.buf[3+altOffset:]
 						Log("Reader: Parsed Focus %v.", event.SetFocus)
+						r.recordLatency(time.Since(r.lastReceivedAt))
 						return event, nil
 					}
 				}
@@ -161,6 +227,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					event := &InputEvent{Type: PasteEventType, PasteStart: parseBuf[4] == '0'}
 					r.buf = r.buf[6+altOffset:]
 					Log("Reader: Parsed Paste event.")
+					r.recordLatency(time.Since(r.lastReceivedAt))
 					return event, nil
 				}
 
@@ -171,6 +238,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						Log("Reader: ParseMouseSGR successful.")
 						r.buf = r.buf[consumed+altOffset:]
 						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						r.recordLatency(time.Since(r.lastReceivedAt))
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -184,6 +252,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						Log("Reader: ParseMouseLegacy successful.")
 						r.buf = r.buf[consumed+altOffset:]
 						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						r.recordLatency(time.Since(r.lastReceivedAt))
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -198,6 +267,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 							Log("Reader: ParseMouseURXVT successful.")
 							r.buf = r.buf[consumed+altOffset:]
 							if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+							r.recordLatency(time.Since(r.lastReceivedAt))
 							return event, nil
 						}
 					} else if err == ErrIncomplete {
@@ -212,6 +282,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						Log("Reader: ParseLegacySS3 successful.")
 						r.buf = r.buf[consumed+altOffset:]
 						if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
+						r.recordLatency(time.Since(r.lastReceivedAt))
 						return event, nil
 					} else if err == ErrIncomplete {
 						goto waitForMore
@@ -262,6 +333,7 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 							r.buf = r.buf[consumed+altOffset:]
 							if altOffset > 0 { event.ControlKeyState |= LeftAltPressed }
 							Log("Reader: Returning CSI event: %s", event.String())
+							r.recordLatency(time.Since(r.lastReceivedAt))
 							return event, nil
 						} else if pErr == ErrInvalidSequence {
 							Log("Reader: Unsupported CSI sequence: %q", string(parseBuf[:terminatorIdx+1]))
@@ -296,19 +368,22 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						return legacyEvt, nil
 					}
 
-					return &InputEvent{
-						Type:            KeyEventType,
-						Char:            character,
-						ControlKeyState: LeftAltPressed,
-						KeyDown:         true,
-						IsLegacy:        true,
-						InputSource:     "legacy_alt",
-					}, nil
+						r.recordLatency(time.Since(r.lastReceivedAt))
+						return &InputEvent{
+							Type:            KeyEventType,
+							Char:            character,
+							ControlKeyState: LeftAltPressed,
+							KeyDown:         true,
+							IsLegacy:        true,
+							InputSource:     "legacy_alt",
+						}, nil
 				}
 
 			waitForMore:
 				select {
-				case ev := <-r.NativeEventChan:
+				case te := <-r.NativeEventChan:
+					ev := te.event
+					r.lastReceivedAt = te.at
 					if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
 						if ev.KeyDown {
 							r.buf = append(r.buf, byte(ev.Char))
@@ -316,9 +391,11 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 						continue
 					}
 					Log("Reader: Returning native event: %s", ev.String())
+					r.recordLatency(time.Since(r.lastReceivedAt))
 					return ev, nil
-				case b := <-r.dataChan:
-					r.buf = append(r.buf, b...)
+				case tc := <-r.dataChan:
+					r.lastReceivedAt = tc.at
+					r.buf = append(r.buf, tc.data...)
 					continue
 				case <-time.After(100 * time.Millisecond):
 					Log("READER_LOOP: ESC timeout (100ms) triggered. Buffer tail: %q", string(r.buf))
@@ -330,8 +407,9 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				drain1:
 					for {
 						select {
-						case b := <-r.dataChan:
-							r.buf = append(r.buf, b...)
+						case tc := <-r.dataChan:
+							r.lastReceivedAt = tc.at
+							r.buf = append(r.buf, tc.data...)
 						default:
 							break drain1
 						}
@@ -343,10 +421,11 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 					continue
 				}
 			}
-			
+
 			// Handle standalone BACK (0x7F)
 			if r.buf[0] == 0x7F {
 				r.buf = r.buf[1:]
+				r.recordLatency(time.Since(r.lastReceivedAt))
 				return &InputEvent{Type: KeyEventType, VirtualKeyCode: VK_BACK, KeyDown: true, IsLegacy: true, InputSource: "legacy_char", RepeatCount: 1}, nil
 			}
 
@@ -366,14 +445,18 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				r.buf = r.buf[consumed:]
 				if event := translateLegacyByte(character); event != nil {
 					event.InputSource = "legacy_ctrl"
+					r.recordLatency(time.Since(r.lastReceivedAt))
 					return event, nil
 				}
+				r.recordLatency(time.Since(r.lastReceivedAt))
 				return &InputEvent{Type: KeyEventType, Char: character, KeyDown: true, IsLegacy: true, InputSource: "legacy_char", RepeatCount: 1}, nil
 			}
-		}	
+		}
 
 		select {
-		case ev := <-r.NativeEventChan:
+		case te := <-r.NativeEventChan:
+			ev := te.event
+			r.lastReceivedAt = te.at
 			if ev.Type == KeyEventType && ev.VirtualKeyCode == 0 && ev.Char != 0 && ev.InputSource == "ConPTY" {
 				if ev.KeyDown {
 					r.buf = append(r.buf, byte(ev.Char))
@@ -381,17 +464,20 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 				continue
 			}
 			Log("Reader: Returning native event: %s", ev.String())
+			r.recordLatency(time.Since(r.lastReceivedAt))
 			return ev, nil
-		case b := <-r.dataChan:
-			r.buf = append(r.buf, b...)
+		case tc := <-r.dataChan:
+			r.lastReceivedAt = tc.at
+			r.buf = append(r.buf, tc.data...)
 		case err := <-r.errChan:
 			Log("Reader: Error in dataChan (drain2): %v", err)
 			// Prioritize data over error to avoid premature EOF
 		drain2:
 			for {
 				select {
-				case b := <-r.dataChan:
-					r.buf = append(r.buf, b...)
+				case tc := <-r.dataChan:
+					r.lastReceivedAt = tc.at
+					r.buf = append(r.buf, tc.data...)
 				default:
 					break drain2
 				}
@@ -403,6 +489,27 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 		}
 
 	}
+}
+
+func (r *Reader) recordLatency(latency time.Duration) {
+	if !r.MetricsEnabled {
+		return
+	}
+	r.mu.Lock()
+	r.lastLatency = latency
+	r.totalLatency += latency
+	r.eventCount++
+	r.mu.Unlock()
+}
+
+// Metrics returns the last event latency, average latency, and total event count.
+func (r *Reader) Metrics() (last time.Duration, avg time.Duration, count int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.eventCount > 0 {
+		avg = r.totalLatency / time.Duration(r.eventCount)
+	}
+	return r.lastLatency, avg, r.eventCount
 }
 
 func translateLegacyByte(r rune) *InputEvent {

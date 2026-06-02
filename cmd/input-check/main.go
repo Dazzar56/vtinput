@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 	"time"
@@ -24,7 +23,21 @@ var (
 	logLines    []string
 	logLimit    = 20
 	currentMods vtinput.ControlKeyState
+	lastLatency time.Duration
+	avgLatency  time.Duration
+	eventCount  int64
+	syncMode    string
 )
+
+type metricsReader interface {
+	Metrics() (time.Duration, time.Duration, int64)
+}
+
+type eventReader interface {
+	ReadEvent() (*vtinput.InputEvent, error)
+	Close()
+	EventChan() <-chan *vtinput.InputEvent
+}
 
 const (
 	_f1   = 0xFF00 + 7
@@ -51,6 +64,7 @@ func main() {
 	useKitty := flag.Bool("kitty", true, "Enable Kitty Keyboard Protocol")
 	useMouse := flag.Bool("mouse", true, "Enable Mouse Support")
 	useExt := flag.Bool("ext", true, "Enable Focus and Bracketed Paste")
+	useSync := flag.Bool("sync", false, "Use synchronous reader (ReaderSync)")
 	flag.Parse()
 
 	var mask vtinput.Protocol
@@ -70,7 +84,19 @@ func main() {
 	fmt.Print("\033[2J\033[?25l")
 	defer fmt.Print("\033[?25h") // Show cursor on exit
 
-	reader := vtinput.NewReader(os.Stdin)
+	var r *vtinput.Reader
+	var rs *vtinput.ReaderSync
+	var reader eventReader
+	if *useSync {
+		rs = vtinput.NewReaderSync(os.Stdin)
+		rs.MetricsEnabled = true
+		reader = rs
+	} else {
+		r = vtinput.NewReader(os.Stdin)
+		r.MetricsEnabled = true
+		reader = r
+	}
+	defer reader.Close()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -78,24 +104,15 @@ func main() {
 	drawUI()
 
 	// Event channel to bridge reader and select loop
-	eventChan := make(chan *vtinput.InputEvent)
-	go func() {
-		for {
-			e, err := reader.ReadEvent()
-			if err != nil {
-				if err != io.EOF {
-					// In a real app we might handle error, here just exit loop
-				}
-				return
-			}
-			eventChan <- e
-		}
-	}()
+	eventChan := reader.EventChan()
 
 	for {
 		select {
 		case e := <-eventChan:
 			handleEvent(e)
+			if mr, ok := reader.(metricsReader); ok {
+				lastLatency, avgLatency, eventCount = mr.Metrics()
+			}
 			if isExitEvent(e) {
 				return
 			}
@@ -201,7 +218,8 @@ func drawUI() {
 	// Move to top-left
 	fmt.Print("\033[H")
 
-	fmt.Print("--- vtinput input visualizer (press Ctrl+C/Esc to exit) ---\r\n\r\n")
+	fmt.Printf("--- vtinput input visualizer (press Ctrl+C/Esc to exit) --- [%s]\r\n", syncMode)
+	fmt.Printf("Last: %v  Avg: %v  (N=%d)\r\n\r\n", lastLatency, avgLatency, eventCount)
 
 	// Determine if we have specific shift keys pressed to avoid generic modifier fallback
 	shiftInMap := false
