@@ -13,6 +13,7 @@ type Reader struct {
 	in                     io.Reader
 	buf                    []byte
 	done                   chan struct{}
+	NativeEventChan        chan *InputEvent
 	useConPTY              bool // Windows only
 	far2lExtensionsEnabled bool
 	conHandle              uintptr // Windows only: console handle
@@ -99,6 +100,26 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 	// Fast path for Windows ConPTY
 	if r.useConPTY {
 		return r.readConPTYEventTimeout(timeout)
+	}
+
+	// If NativeEventChan is being used (GUI mode), we get all events from it.
+	if r.NativeEventChan != nil {
+		var timeoutChan <-chan time.Time
+		if timeout > 0 {
+			timeoutChan = time.After(timeout)
+		}
+		select {
+		case <-r.done:
+			return nil, io.EOF
+		case ev, ok := <-r.NativeEventChan:
+			if !ok {
+				return nil, io.EOF
+			}
+			r.recordLatency(time.Since(r.lastReceivedAt))
+			return ev, nil
+		case <-timeoutChan:
+			return nil, nil
+		}
 	}
 
 	var deadline time.Time
