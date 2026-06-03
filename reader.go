@@ -13,7 +13,6 @@ type Reader struct {
 	in                     io.Reader
 	buf                    []byte
 	done                   chan struct{}
-	NativeEventChan        chan *InputEvent
 	useConPTY              bool // Windows only
 	far2lExtensionsEnabled bool
 	conHandle              uintptr // Windows only: console handle
@@ -27,19 +26,22 @@ type Reader struct {
 	eventCount     int64
 	lastReceivedAt time.Time
 
-	eventChan chan *InputEvent
-	stopRead  chan struct{}
-	onceStop  sync.Once
+	EventChan     chan *InputEvent // need to be public for vtui
+	onceEventChan sync.Once
+
+	bypassReadEvent bool // for use by GUI backends (e.g. X11) to inject events directly
 
 	MetricsEnabled bool
 }
 
 // NewReader creates a synchronous input reader.
-func NewReader(in io.Reader) *Reader {
+func NewReader(in io.Reader, bypassReadEvent bool) *Reader {
 	r := &Reader{
-		in:   in,
-		buf:  make([]byte, 0, 128),
-		done: make(chan struct{}),
+		in:              in,
+		buf:             make([]byte, 0, 128),
+		done:            make(chan struct{}),
+		EventChan:       make(chan *InputEvent, 1024),
+		bypassReadEvent: bypassReadEvent,
 	}
 	r.platformInit(in)
 	return r
@@ -52,42 +54,40 @@ func (r *Reader) Close() {
 		return
 	default:
 		close(r.done)
+		if r.bypassReadEvent {
+			close(r.EventChan)
+		}
+
 		r.platformClose()
-	}
-	if r.stopRead != nil {
-		r.onceStop.Do(func() { close(r.stopRead) })
 	}
 }
 
-// EventChan returns a channel that yields input events.
+// GetEventChan returns a channel that yields input events.
 // It starts a background goroutine that calls ReadEvent() in a loop.
 // The channel is closed when the reader is closed or an error occurs.
-func (r *Reader) EventChan() <-chan *InputEvent {
-	if r.eventChan != nil {
-		return r.eventChan
+func (r *Reader) GetEventChan() chan *InputEvent {
+	if !r.bypassReadEvent {
+		r.onceEventChan.Do(func() {
+			go func() {
+				defer close(r.EventChan)
+				for {
+					e, err := r.ReadEvent()
+					if err != nil {
+						Log("ReadEvent error: %v", err)
+						return
+					}
+
+					select {
+					case r.EventChan <- e:
+					case <-r.done:
+						return
+					}
+				}
+			}()
+		})
 	}
-	r.eventChan = make(chan *InputEvent, 1024)
-	r.stopRead = make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-r.stopRead:
-				return
-			default:
-			}
-			e, err := r.ReadEvent()
-			if err != nil {
-				r.onceStop.Do(func() { close(r.eventChan) })
-				return
-			}
-			select {
-			case r.eventChan <- e:
-			case <-r.stopRead:
-				return
-			}
-		}
-	}()
-	return r.eventChan
+
+	return r.EventChan
 }
 
 // ReadEvent reads the next input event.
@@ -100,26 +100,6 @@ func (r *Reader) ReadEventTimeout(timeout time.Duration) (*InputEvent, error) {
 	// Fast path for Windows ConPTY
 	if r.useConPTY {
 		return r.readConPTYEventTimeout(timeout)
-	}
-
-	// If NativeEventChan is being used (GUI mode), we get all events from it.
-	if r.NativeEventChan != nil {
-		var timeoutChan <-chan time.Time
-		if timeout > 0 {
-			timeoutChan = time.After(timeout)
-		}
-		select {
-		case <-r.done:
-			return nil, io.EOF
-		case ev, ok := <-r.NativeEventChan:
-			if !ok {
-				return nil, io.EOF
-			}
-			r.recordLatency(time.Since(r.lastReceivedAt))
-			return ev, nil
-		case <-timeoutChan:
-			return nil, nil
-		}
 	}
 
 	var deadline time.Time
