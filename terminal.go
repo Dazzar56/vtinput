@@ -92,7 +92,7 @@ func EnableProtocols(p Protocol) (func(), error) {
 	// If we request ANSI protocols, ConPTY will "pulverize" the resulting ESC
 	// sequences into VK:0 key events, causing massive duplication and lag.
 	isWindowsNative := runtime.GOOS == "windows" && (InputMode == "" || InputMode == "ConPTY")
-	if InputMode == "winapi" || isWindowsNative {
+	if InputMode == "ConPTY" || isWindowsNative {
 		Log("VTINPUT: Windows Native mode detected, suppressing redundant ANSI protocols.")
 		enableSeq = ""
 		disableSeq = ""

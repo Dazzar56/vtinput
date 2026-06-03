@@ -84,7 +84,7 @@ func main() {
 	fmt.Print("\033[2J\033[?25l")
 	defer fmt.Print("\033[?25h") // Show cursor on exit
 
-	reader := vtinput.NewReader(os.Stdin)
+	reader := vtinput.NewReader(os.Stdin, false)
 	reader.MetricsEnabled = true
 	defer reader.Close()
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -94,7 +94,7 @@ func main() {
 	drawUI()
 
 	// Event channel to bridge reader and select loop
-	eventChan := reader.EventChan()
+	eventChan := reader.GetEventChan()
 
 	for {
 		select {

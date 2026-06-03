@@ -374,7 +374,7 @@ func TestParseLegacySS3_PuttyCtrlArrows(t *testing.T) {
 
 func TestReadEvent_PuttyAltF1(t *testing.T) {
 	input := []byte("\x1b\x1b[11~")
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	e, err := r.ReadEvent()
 	if err != nil {
@@ -388,7 +388,7 @@ func TestReadEvent_PuttyAltF1(t *testing.T) {
 func TestReadEvent_VTEBrokenSS3(t *testing.T) {
 	// This tests the workaround in reader.go where ESC [ O is not swallowed by Focus Out
 	input := []byte("\x1b[O3P")
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	e, err := r.ReadEvent()
 	if err != nil {
@@ -687,7 +687,7 @@ func TestParseKitty(t *testing.T) {
 func TestReadEvent_Focus(t *testing.T) {
 	// 1. Focus In, 2. Focus Out
 	input := []byte("\x1b[I\x1b[O")
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	// Check Focus In
 	e, err := r.ReadEvent()
@@ -717,7 +717,7 @@ func TestReadEvent_Focus(t *testing.T) {
 func TestReadEvent_Paste(t *testing.T) {
 	// 1. Start Paste, 2. End Paste
 	input := []byte("\x1b[200~\x1b[201~")
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	// Check Paste Start
 	e, err := r.ReadEvent()
@@ -749,7 +749,7 @@ func TestReadEvent_Fallback(t *testing.T) {
 	// ParseKitty does not include 'Z' in its valid commands list,
 	// so Reader should fallback to ParseLegacyCSI.
 	input := []byte("\x1b[Z")
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	e, err := r.ReadEvent()
 	if err != nil {
@@ -762,7 +762,7 @@ func TestReadEvent_Fallback(t *testing.T) {
 
 func TestReadEvent_AltCyrillic(t *testing.T) {
 	pr, pw := io.Pipe()
-	r := NewReader(pr)
+	r := NewReader(pr, false)
 
 	go func() {
 		pw.Write([]byte{0x1B, 0xD0, 0xB0})
@@ -781,7 +781,7 @@ func TestReadEvent_AltCyrillic(t *testing.T) {
 func TestReadEvent_Mixed(t *testing.T) {
 	// 1. Ctrl+C, 2. Backtab, 3. Double ESC, 4. Ctrl+Space, 5. Ctrl+\, 6. Ctrl+H, 7. Ctrl+^, 8. Ctrl+_
 	input := []byte{0x03, 0x1B, '[', 'Z', 0x1B, 0x1B, 0x00, 0x1C, 0x08, 0x1E, 0x1F}
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	// Check Ctrl+C
 	e, err := r.ReadEvent()
@@ -860,7 +860,7 @@ func TestReadEvent_DA(t *testing.T) {
 	// DA sequence: ESC [ ? 1 ; 2 c (Terminal identifies as VT100 with extensions)
 	// Followed by a real key 'A'
 	input := []byte("\x1b[?1;2c" + "A")
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	e, err := r.ReadEvent()
 	if err != nil {
@@ -876,7 +876,7 @@ func TestReadEvent_DSR(t *testing.T) {
 	// DSR Status response: ESC [ 0 n (Terminal reports OK)
 	// Followed by a real key 'B'
 	input := []byte("\x1b[0n" + "B")
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	e, err := r.ReadEvent()
 	if err != nil {
@@ -891,7 +891,7 @@ func TestReadEvent_DSR(t *testing.T) {
 func TestReadEvent_EscTimeout(t *testing.T) {
 	// Create a pipe to control data flow
 	pr, pw := io.Pipe()
-	r := NewReader(pr)
+	r := NewReader(pr, false)
 
 	// Send single ESC and keep the pipe open for a while
 	go func() {
@@ -920,7 +920,7 @@ func TestReadEvent_Far2lEqualsBug(t *testing.T) {
 	// Far2l's terminal emulator sends '= ' as two separate legacy keydown events.
 	// This test ensures our workaround consumes the space.
 	input := []byte("= ")
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	// 1. Read the '=' event.
 	e, err := r.ReadEvent()
@@ -943,7 +943,7 @@ func TestReadEvent_ArkanoidFix(t *testing.T) {
 	// Test parsing of Ctrl+Alt+A in Legacy mode (ESC + \x01)
 	// \x01 is SOH (Start of Header), used as Ctrl+A in many terminals.
 	input := []byte{0x1B, 0x01}
-	r := NewReader(bytes.NewReader(input))
+	r := NewReader(bytes.NewReader(input), false)
 
 	e, err := r.ReadEvent()
 	if err != nil {
