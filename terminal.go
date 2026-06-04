@@ -94,22 +94,7 @@ func EnableProtocols(p Protocol) (func(), error) {
 	isWindowsNative := runtime.GOOS == "windows" && (InputMode == "" || InputMode == "ConPTY")
 	if InputMode == "ConPTY" || isWindowsNative {
 		Log("VTINPUT: Windows Native mode detected, suppressing redundant ANSI protocols.")
-		enableSeq = ""
-		disableSeq = ""
-
-		// The ONLY exception is Bracketed Paste. WinAPI does not have a PASTE_EVENT.
-		// We must ask the terminal to wrap pastes in \x1b[200~ so our parser can catch them.
-		if p&FocusAndPaste != 0 {
-			enableSeq += "\x1b[?2004h"
-			disableSeq = "\x1b[?2004l" + disableSeq
-		}
-
-		if _, err := os.Stdout.WriteString(enableSeq); err != nil {
-			term.Restore(fd, oldState)
-			return nil, err
-		}
 		return func() {
-			os.Stdout.WriteString(disableSeq)
 			term.Restore(fd, oldState)
 		}, nil
 	}
